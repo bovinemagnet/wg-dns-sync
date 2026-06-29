@@ -26,7 +26,7 @@ Endpoint = example.com:51820
 	}
 }
 
-func TestUpdatePeerAllowedIPsDuplicateTargetFails(t *testing.T) {
+func TestUpdatePeerAllowedIPsDuplicateTargetReturnsError(t *testing.T) {
 	input := `[Peer]
 PublicKey = TARGET
 
