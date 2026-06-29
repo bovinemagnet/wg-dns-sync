@@ -1,7 +1,6 @@
 package wireguard
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -53,12 +52,6 @@ func UpdatePeerAllowedIPs(content, targetPublicKey string, allowedIPs []string) 
 
 func ValidateTargetPeer(content, targetPublicKey string) error {
 	_, err := UpdatePeerAllowedIPs(content, targetPublicKey, []string{"0.0.0.0/32"})
-	if err != nil {
-		var peerErr PeerMatchError
-		if errors.As(err, &peerErr) {
-			return err
-		}
-	}
 	return err
 }
 
