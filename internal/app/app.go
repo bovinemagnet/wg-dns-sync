@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/netip"
 	"os"
 	"strings"
@@ -79,9 +80,7 @@ func newResolveCmd(configPath *string) *cobra.Command {
 				return wrapExit(ExitCodeInvalidArguments, err)
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), text)
-			if summary.WarningCount > 0 {
-				fmt.Fprintf(cmd.ErrOrStderr(), "WARNING: failed to resolve %d of %d DNS names.\n", summary.WarningCount, summary.HostCount)
-			}
+			summary.printWarnings(cmd.ErrOrStderr())
 			return nil
 		},
 	}
@@ -153,6 +152,7 @@ func newUpdateCmd(configPath *string) *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(), "Resolved %d DNS names.\n", summary.HostCount)
 				fmt.Fprintf(cmd.OutOrStdout(), "Generated %d AllowedIPs entries.\n", len(prefixes))
 				fmt.Fprintln(cmd.OutOrStdout(), "Dry run enabled: no files were written.")
+				summary.printWarnings(cmd.ErrOrStderr())
 				return nil
 			}
 
@@ -173,6 +173,7 @@ func newUpdateCmd(configPath *string) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "Updated peer %s...\n", cfg.WireGuard.TargetPeerPublicKey)
 			fmt.Fprintf(cmd.OutOrStdout(), "Backup written to %s\n", backupPath)
 			fmt.Fprintf(cmd.OutOrStdout(), "Config written to %s\n", outputPath)
+			summary.printWarnings(cmd.ErrOrStderr())
 			return nil
 		},
 	}
@@ -210,6 +211,16 @@ type resolveSummary struct {
 	WarningCount int
 }
 
+// printWarnings reports partial DNS-resolution failures to stderr, matching the
+// two-line format in the PRD. It is a no-op when every name resolved.
+func (s resolveSummary) printWarnings(w io.Writer) {
+	if s.WarningCount == 0 {
+		return
+	}
+	fmt.Fprintf(w, "WARNING: failed to resolve %d of %d DNS names.\n", s.WarningCount, s.HostCount)
+	fmt.Fprintf(w, "Generated AllowedIPs from remaining %d names.\n", s.HostCount-s.WarningCount)
+}
+
 func resolveAllowedIPs(ctx context.Context, cfg config.AppConfig) ([]netip.Prefix, resolveSummary, error) {
 	results, err := dns.ResolveHosts(ctx, nil, cfg.AllowedIPs.DNSNames, cfg.DNS)
 	if err != nil {
@@ -229,7 +240,7 @@ func resolveAllowedIPs(ctx context.Context, cfg config.AppConfig) ([]netip.Prefi
 		resolved = append(resolved, result.IPs...)
 	}
 
-	prefixes, err := allowedips.Build(cfg.AllowedIPs.Static, resolved)
+	prefixes, err := allowedips.Build(cfg.AllowedIPs.Static, resolved, cfg.Output.Sort)
 	if err != nil {
 		return nil, resolveSummary{}, wrapExit(ExitCodeInvalidConfig, err)
 	}
