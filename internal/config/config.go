@@ -100,9 +100,6 @@ func (c *AppConfig) ApplyDefaults() {
 	if c.Output.Format == "" {
 		c.Output.Format = "wireguard"
 	}
-	if c.DNS.Retries == 0 {
-		c.DNS.Retries = 1
-	}
 }
 
 func (c AppConfig) Validate() error {
