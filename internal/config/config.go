@@ -17,8 +17,26 @@ import (
 type AppConfig struct {
 	WireGuard  WireGuardConfig  `yaml:"wireguard"`
 	AllowedIPs AllowedIPsConfig `yaml:"allowed_ips"`
+	Peers      []PeerConfig     `yaml:"peers"`
 	DNS        DNSConfig        `yaml:"dns"`
 	Output     OutputConfig     `yaml:"output"`
+}
+
+// PeerConfig describes one peer to update when the optional top-level `peers`
+// list is used. When `peers` is empty the tool falls back to the single-peer
+// fields (wireguard.target_peer_public_key + allowed_ips).
+type PeerConfig struct {
+	PublicKey string   `yaml:"public_key"`
+	Static    []string `yaml:"static"`
+	DNSNames  []string `yaml:"dns_names"`
+}
+
+// PeerTarget is the normalised, internal view of a peer to update, regardless of
+// whether the config used the single-peer fields or the `peers` list.
+type PeerTarget struct {
+	PublicKey string
+	Static    []string
+	DNSNames  []string
 }
 
 type WireGuardConfig struct {
@@ -109,13 +127,48 @@ func (c *AppConfig) ApplyDefaults() {
 	}
 }
 
-func (c AppConfig) Validate() error {
-	if len(c.AllowedIPs.DNSNames) == 0 {
-		return errors.New("allowed_ips.dns_names must not be empty")
+// PeerTargets normalises the config into the list of peers to update. With a
+// `peers` list it returns one target per entry; otherwise it returns a single
+// target synthesised from the legacy single-peer fields.
+func (c AppConfig) PeerTargets() []PeerTarget {
+	if len(c.Peers) > 0 {
+		out := make([]PeerTarget, len(c.Peers))
+		for i, p := range c.Peers {
+			out[i] = PeerTarget{PublicKey: p.PublicKey, Static: p.Static, DNSNames: p.DNSNames}
+		}
+		return out
 	}
-	for _, cidr := range c.AllowedIPs.Static {
-		if _, err := netip.ParsePrefix(cidr); err != nil {
-			return fmt.Errorf("invalid static CIDR %q: %w", cidr, err)
+	return []PeerTarget{{
+		PublicKey: c.WireGuard.TargetPeerPublicKey,
+		Static:    c.AllowedIPs.Static,
+		DNSNames:  c.AllowedIPs.DNSNames,
+	}}
+}
+
+func (c AppConfig) dnsNamesField(i int) string {
+	if len(c.Peers) > 0 {
+		return fmt.Sprintf("peers[%d].dns_names", i)
+	}
+	return "allowed_ips.dns_names"
+}
+
+func (c AppConfig) publicKeyField(i int) string {
+	if len(c.Peers) > 0 {
+		return fmt.Sprintf("peers[%d].public_key", i)
+	}
+	return "wireguard.target_peer_public_key"
+}
+
+func (c AppConfig) Validate() error {
+	targets := c.PeerTargets()
+	for i, t := range targets {
+		if len(t.DNSNames) == 0 {
+			return fmt.Errorf("%s must not be empty", c.dnsNamesField(i))
+		}
+		for _, cidr := range t.Static {
+			if _, err := netip.ParsePrefix(cidr); err != nil {
+				return fmt.Errorf("invalid static CIDR %q: %w", cidr, err)
+			}
 		}
 	}
 	if c.DNS.Concurrency < MinDNSConcurrency || c.DNS.Concurrency > MaxDNSConcurrency {
@@ -159,8 +212,10 @@ func (c AppConfig) Validate() error {
 		if strings.TrimSpace(c.WireGuard.ConfigPath) == "" {
 			return errors.New("wireguard.config_path is required for update-config mode")
 		}
-		if strings.TrimSpace(c.WireGuard.TargetPeerPublicKey) == "" {
-			return errors.New("wireguard.target_peer_public_key is required for update-config mode")
+		for i, t := range targets {
+			if strings.TrimSpace(t.PublicKey) == "" {
+				return fmt.Errorf("%s is required for update-config mode", c.publicKeyField(i))
+			}
 		}
 	}
 	return nil
@@ -186,10 +241,13 @@ const defaultConfigTemplate = `wireguard:
 
 allowed_ips:
   static:
-    - "10.0.0.0/8"
+{{- range .Static }}
+    - "{{ . }}"
+{{- end }}
   dns_names:
-    - "service-a.example.com"
-    - "service-b.example.com"
+{{- range .DNSNames }}
+    - "{{ . }}"
+{{- end }}
 
 dns:
   concurrency: 6
@@ -205,7 +263,29 @@ output:
   sort: true
 `
 
+// ConfigTemplateData is the data used to render a starter config file.
+type ConfigTemplateData struct {
+	WireGuardPath string
+	PeerPublicKey string
+	Static        []string
+	DNSNames      []string
+}
+
+// InitConfigFile writes a starter config using example static CIDRs and DNS
+// names. wgConfigPath and peerPublicKey fall back to placeholders when empty.
 func InitConfigFile(configPath, wgConfigPath, peerPublicKey string) (string, error) {
+	return InitConfigFileWith(configPath, ConfigTemplateData{
+		WireGuardPath: wgConfigPath,
+		PeerPublicKey: peerPublicKey,
+		Static:        []string{"10.0.0.0/8"},
+		DNSNames:      []string{"service-a.example.com", "service-b.example.com"},
+	})
+}
+
+// InitConfigFileWith writes a starter config from the supplied data. It creates
+// the parent directory, refuses to overwrite an existing config, and applies
+// placeholder defaults for an empty WireGuard path or peer key.
+func InitConfigFileWith(configPath string, data ConfigTemplateData) (string, error) {
 	if strings.TrimSpace(configPath) == "" {
 		var err error
 		configPath, err = DefaultConfigPath()
@@ -219,24 +299,18 @@ func InitConfigFile(configPath, wgConfigPath, peerPublicKey string) (string, err
 	if _, err := os.Stat(configPath); err == nil {
 		return "", fmt.Errorf("config already exists: %s", configPath)
 	}
-	if strings.TrimSpace(wgConfigPath) == "" {
-		wgConfigPath = "/etc/wireguard/wg0.conf"
+	if strings.TrimSpace(data.WireGuardPath) == "" {
+		data.WireGuardPath = "/etc/wireguard/wg0.conf"
 	}
-	if strings.TrimSpace(peerPublicKey) == "" {
-		peerPublicKey = "REPLACE_WITH_PEER_PUBLIC_KEY"
+	if strings.TrimSpace(data.PeerPublicKey) == "" {
+		data.PeerPublicKey = "REPLACE_WITH_PEER_PUBLIC_KEY"
 	}
 	tmpl, err := template.New("default-config").Parse(defaultConfigTemplate)
 	if err != nil {
 		return "", err
 	}
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, struct {
-		WireGuardPath string
-		PeerPublicKey string
-	}{
-		WireGuardPath: wgConfigPath,
-		PeerPublicKey: peerPublicKey,
-	}); err != nil {
+	if err := tmpl.Execute(&buf, data); err != nil {
 		return "", err
 	}
 	if err := os.WriteFile(configPath, buf.Bytes(), 0o600); err != nil {

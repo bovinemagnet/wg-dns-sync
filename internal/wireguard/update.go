@@ -9,13 +9,13 @@ type PeerMatchError struct{ Message string }
 
 func (e PeerMatchError) Error() string { return e.Message }
 
-func UpdatePeerAllowedIPs(content, targetPublicKey string, allowedIPs []string) (string, error) {
-	lines := strings.Split(content, "\n")
+// findTargetPeer locates the single [Peer] section whose PublicKey matches
+// targetPublicKey, erroring when zero or more than one peer matches.
+func findTargetPeer(lines []string, targetPublicKey string) (sectionRange, error) {
 	peerRanges := peerSections(lines)
 	if len(peerRanges) == 0 {
-		return "", PeerMatchError{Message: "no [Peer] sections found"}
+		return sectionRange{}, PeerMatchError{Message: "no [Peer] sections found"}
 	}
-
 	targets := make([]sectionRange, 0, 1)
 	for _, sec := range peerRanges {
 		pub, _ := findKey(lines, sec, "PublicKey")
@@ -24,12 +24,40 @@ func UpdatePeerAllowedIPs(content, targetPublicKey string, allowedIPs []string) 
 		}
 	}
 	if len(targets) == 0 {
-		return "", PeerMatchError{Message: "target peer public key not found"}
+		return sectionRange{}, PeerMatchError{Message: "target peer public key not found"}
 	}
 	if len(targets) > 1 {
-		return "", PeerMatchError{Message: "multiple peers match target public key"}
+		return sectionRange{}, PeerMatchError{Message: "multiple peers match target public key"}
 	}
-	target := targets[0]
+	return targets[0], nil
+}
+
+// PeerAllowedIPs returns the current AllowedIPs entries for the matching peer,
+// split into individual CIDRs. It errors if zero or multiple peers match.
+func PeerAllowedIPs(content, targetPublicKey string) ([]string, error) {
+	lines := strings.Split(content, "\n")
+	target, err := findTargetPeer(lines, targetPublicKey)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0)
+	for _, idx := range keyIndexes(lines, target, "AllowedIPs") {
+		_, val, _ := parseKV(lines[idx])
+		for _, part := range strings.Split(val, ",") {
+			if part = strings.TrimSpace(part); part != "" {
+				out = append(out, part)
+			}
+		}
+	}
+	return out, nil
+}
+
+func UpdatePeerAllowedIPs(content, targetPublicKey string, allowedIPs []string) (string, error) {
+	lines := strings.Split(content, "\n")
+	target, err := findTargetPeer(lines, targetPublicKey)
+	if err != nil {
+		return "", err
+	}
 	allowedLine := fmt.Sprintf("AllowedIPs = %s", strings.Join(allowedIPs, ", "))
 
 	idxs := keyIndexes(lines, target, "AllowedIPs")

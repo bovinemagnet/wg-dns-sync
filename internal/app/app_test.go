@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bovinemagnet/wg-dns-sync/internal/config"
 	"github.com/bovinemagnet/wg-dns-sync/internal/dns"
 )
 
@@ -273,6 +274,200 @@ func TestUpdateDryRunWritesNothing(t *testing.T) {
 	}
 	if backups := glob(t, dir, "wg0.conf.bak.*"); len(backups) != 0 {
 		t.Fatalf("dry-run created backups: %v", backups)
+	}
+}
+
+func writeMultiPeerConfig(t *testing.T, wgPath string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	body := fmt.Sprintf(`wireguard:
+  config_path: '%s'
+  preserve_permissions: true
+peers:
+  - public_key: "KEY_A"
+    static:
+      - "10.0.0.0/8"
+    dns_names:
+      - "a.example.com"
+  - public_key: "KEY_B"
+    dns_names:
+      - "b.example.com"
+dns:
+  concurrency: 4
+  timeout: "1s"
+  retries: 0
+  families:
+    - "ipv4"
+  fail_on_lookup_error: true
+output:
+  mode: "update-config"
+  format: "wireguard"
+  sort: true
+`, wgPath)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestRenderMultiPeerMatchesGolden(t *testing.T) {
+	resolver := fakeResolver{data: map[string][]net.IPAddr{
+		"a.example.com": ipv4("203.0.113.10"),
+		"b.example.com": ipv4("203.0.113.20"),
+	}}
+	cfg := writeMultiPeerConfig(t, "testdata/wg0-multipeer.conf")
+
+	out, _, err := run(resolver, "render", "--config", cfg)
+	if err != nil {
+		t.Fatalf("render error: %v", err)
+	}
+	want, err := os.ReadFile("testdata/wg0-multipeer.expected.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != string(want) {
+		t.Fatalf("multi-peer render mismatch:\n got: %q\nwant: %q", out, want)
+	}
+}
+
+func TestUpdateMultiPeerWritesBothPeers(t *testing.T) {
+	resolver := fakeResolver{data: map[string][]net.IPAddr{
+		"a.example.com": ipv4("203.0.113.10"),
+		"b.example.com": ipv4("203.0.113.20"),
+	}}
+	original, err := os.ReadFile("testdata/wg0-multipeer.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	wgPath := filepath.Join(dir, "wg0.conf")
+	if err := os.WriteFile(wgPath, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := writeMultiPeerConfig(t, wgPath)
+
+	out, _, err := run(resolver, "update", "--config", cfg)
+	if err != nil {
+		t.Fatalf("update error: %v", err)
+	}
+
+	got, err := os.ReadFile(wgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/wg0-multipeer.expected.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("multi-peer update mismatch:\n got: %q\nwant: %q", got, want)
+	}
+	if !strings.Contains(out, "Updated peer KEY_A") || !strings.Contains(out, "Updated peer KEY_B") {
+		t.Fatalf("summary missing per-peer lines: %q", out)
+	}
+}
+
+func TestDiffShowsAddedAndRemoved(t *testing.T) {
+	resolver := fakeResolver{data: map[string][]net.IPAddr{
+		"service-a.example.com": ipv4("203.0.113.10"),
+		"service-b.example.com": ipv4("203.0.113.11"),
+	}}
+	cfg := writeConfig(t, configOpts{mode: "update-config", format: "wireguard", wgPath: "testdata/wg0.conf"})
+
+	out, _, err := run(resolver, "diff", "--config", cfg)
+	if err != nil {
+		t.Fatalf("diff error: %v", err)
+	}
+	// Stale 198.51.100.10/32 removed; the two resolved hosts added; static unchanged.
+	for _, want := range []string{
+		"Peer TARGET_PUBLIC_KEY AllowedIPs:",
+		"- 198.51.100.10/32",
+		"+ 203.0.113.10/32",
+		"+ 203.0.113.11/32",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("diff output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "10.0.0.0/8") {
+		t.Fatalf("static entry should be unchanged, not shown in diff:\n%s", out)
+	}
+}
+
+func TestDiffUnchanged(t *testing.T) {
+	// Resolve to exactly what the config already contains (static + the one stale IP).
+	resolver := fakeResolver{data: map[string][]net.IPAddr{
+		"service-a.example.com": ipv4("198.51.100.10"),
+		"service-b.example.com": ipv4("198.51.100.10"),
+	}}
+	cfg := writeConfig(t, configOpts{mode: "update-config", format: "wireguard", wgPath: "testdata/wg0.conf"})
+
+	out, _, err := run(resolver, "diff", "--config", cfg)
+	if err != nil {
+		t.Fatalf("diff error: %v", err)
+	}
+	if !strings.Contains(out, "unchanged") {
+		t.Fatalf("expected unchanged diff, got:\n%s", out)
+	}
+}
+
+func TestCompletionGeneratesForEachShell(t *testing.T) {
+	for _, shell := range []string{"bash", "zsh", "fish", "powershell"} {
+		out, _, err := run(nil, "completion", shell)
+		if err != nil {
+			t.Fatalf("completion %s error: %v", shell, err)
+		}
+		if len(strings.TrimSpace(out)) == 0 {
+			t.Fatalf("completion %s produced no output", shell)
+		}
+	}
+}
+
+func TestCompletionRejectsUnknownShell(t *testing.T) {
+	if _, _, err := run(nil, "completion", "tcsh"); err == nil {
+		t.Fatal("expected error for unsupported shell")
+	}
+}
+
+func TestInitInteractiveWritesConfig(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+	root := newRootCommand(nil)
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SilenceUsage = true
+	root.SilenceErrors = true
+	root.SetIn(strings.NewReader("/tmp/wg0.conf\nMYKEY\nx.example.com, y.example.com\n"))
+	root.SetArgs([]string{"init", "--interactive", "--config", cfgPath})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("init --interactive error: %v", err)
+	}
+
+	cfg, _, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("generated config invalid: %v", err)
+	}
+	if cfg.WireGuard.ConfigPath != "/tmp/wg0.conf" || cfg.WireGuard.TargetPeerPublicKey != "MYKEY" {
+		t.Fatalf("wizard values not applied: %+v", cfg.WireGuard)
+	}
+	names := cfg.AllowedIPs.DNSNames
+	if len(names) != 2 || names[0] != "x.example.com" || names[1] != "y.example.com" {
+		t.Fatalf("dns names = %v", names)
+	}
+}
+
+func TestInitInteractiveRequiresDNSName(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+	root := newRootCommand(nil)
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SilenceUsage = true
+	root.SilenceErrors = true
+	root.SetIn(strings.NewReader("/tmp/wg0.conf\nMYKEY\n\n")) // no DNS names
+	root.SetArgs([]string{"init", "--interactive", "--config", cfgPath})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when no DNS names entered")
 	}
 }
 
