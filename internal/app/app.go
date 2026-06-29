@@ -19,7 +19,14 @@ import (
 	"github.com/bovinemagnet/wg-dns-sync/internal/wireguard"
 )
 
+// NewRootCommand builds the CLI using the system DNS resolver.
 func NewRootCommand() *cobra.Command {
+	return newRootCommand(nil)
+}
+
+// newRootCommand builds the CLI with an injectable resolver. A nil resolver
+// falls back to the system resolver; tests pass a fake to avoid real lookups.
+func newRootCommand(resolver dns.IPResolver) *cobra.Command {
 	var configPath string
 	cmd := &cobra.Command{
 		Use:   "wg-dns-sync",
@@ -28,9 +35,9 @@ func NewRootCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&configPath, "config", "", "path to config file")
 
 	cmd.AddCommand(newInitCmd(&configPath))
-	cmd.AddCommand(newResolveCmd(&configPath))
-	cmd.AddCommand(newRenderCmd(&configPath))
-	cmd.AddCommand(newUpdateCmd(&configPath))
+	cmd.AddCommand(newResolveCmd(&configPath, resolver))
+	cmd.AddCommand(newRenderCmd(&configPath, resolver))
+	cmd.AddCommand(newUpdateCmd(&configPath, resolver))
 	cmd.AddCommand(newValidateCmd(&configPath))
 	return cmd
 }
@@ -54,7 +61,7 @@ func newInitCmd(configPath *string) *cobra.Command {
 	return cmd
 }
 
-func newResolveCmd(configPath *string) *cobra.Command {
+func newResolveCmd(configPath *string, resolver dns.IPResolver) *cobra.Command {
 	var concurrency int
 	var format string
 	cmd := &cobra.Command{
@@ -71,7 +78,7 @@ func newResolveCmd(configPath *string) *cobra.Command {
 			if strings.TrimSpace(format) != "" {
 				cfg.Output.Format = format
 			}
-			prefixes, summary, err := resolveAllowedIPs(cmd.Context(), cfg)
+			prefixes, summary, err := resolveAllowedIPs(cmd.Context(), resolver, cfg)
 			if err != nil {
 				return err
 			}
@@ -89,7 +96,7 @@ func newResolveCmd(configPath *string) *cobra.Command {
 	return cmd
 }
 
-func newRenderCmd(configPath *string) *cobra.Command {
+func newRenderCmd(configPath *string, resolver dns.IPResolver) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "render",
 		Short: "Render updated WireGuard config to stdout",
@@ -98,7 +105,7 @@ func newRenderCmd(configPath *string) *cobra.Command {
 			if err != nil {
 				return wrapExit(ExitCodeInvalidConfig, err)
 			}
-			prefixes, _, err := resolveAllowedIPs(cmd.Context(), cfg)
+			prefixes, _, err := resolveAllowedIPs(cmd.Context(), resolver, cfg)
 			if err != nil {
 				return err
 			}
@@ -117,7 +124,7 @@ func newRenderCmd(configPath *string) *cobra.Command {
 	return cmd
 }
 
-func newUpdateCmd(configPath *string) *cobra.Command {
+func newUpdateCmd(configPath *string, resolver dns.IPResolver) *cobra.Command {
 	var dryRun bool
 	var backupDir string
 	var outputPathFlag string
@@ -135,7 +142,7 @@ func newUpdateCmd(configPath *string) *cobra.Command {
 			if strings.TrimSpace(outputPathFlag) != "" {
 				cfg.WireGuard.OutputPath = outputPathFlag
 			}
-			prefixes, summary, err := resolveAllowedIPs(cmd.Context(), cfg)
+			prefixes, summary, err := resolveAllowedIPs(cmd.Context(), resolver, cfg)
 			if err != nil {
 				return err
 			}
@@ -221,8 +228,8 @@ func (s resolveSummary) printWarnings(w io.Writer) {
 	fmt.Fprintf(w, "Generated AllowedIPs from remaining %d names.\n", s.HostCount-s.WarningCount)
 }
 
-func resolveAllowedIPs(ctx context.Context, cfg config.AppConfig) ([]netip.Prefix, resolveSummary, error) {
-	results, err := dns.ResolveHosts(ctx, nil, cfg.AllowedIPs.DNSNames, cfg.DNS)
+func resolveAllowedIPs(ctx context.Context, resolver dns.IPResolver, cfg config.AppConfig) ([]netip.Prefix, resolveSummary, error) {
+	results, err := dns.ResolveHosts(ctx, resolver, cfg.AllowedIPs.DNSNames, cfg.DNS)
 	if err != nil {
 		return nil, resolveSummary{}, wrapExit(ExitCodeDNSFailure, err)
 	}
