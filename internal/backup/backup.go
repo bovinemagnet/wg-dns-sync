@@ -1,6 +1,8 @@
 package backup
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
@@ -20,7 +22,11 @@ func Create(srcPath, backupDir string) (string, fs.FileMode, error) {
 	if err := os.MkdirAll(backupDir, 0o700); err != nil {
 		return "", 0, err
 	}
-	name := fmt.Sprintf("%s.bak.%s", filepath.Base(srcPath), time.Now().UTC().Format("20060102T150405.000000000"))
+	suffix, err := randomSuffix(4)
+	if err != nil {
+		return "", 0, err
+	}
+	name := fmt.Sprintf("%s.bak.%s.%s", filepath.Base(srcPath), time.Now().UTC().Format("20060102T150405.000000000"), suffix)
 	backupPath := filepath.Join(backupDir, name)
 	if _, err := os.Stat(backupPath); err == nil {
 		return "", 0, fmt.Errorf("backup already exists: %s", backupPath)
@@ -48,6 +54,14 @@ func Create(srcPath, backupDir string) (string, fs.FileMode, error) {
 		return "", 0, err
 	}
 	return backupPath, perm, nil
+}
+
+func randomSuffix(size int) (string, error) {
+	b := make([]byte, size)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 func WriteAtomic(path string, data []byte, perm fs.FileMode) error {

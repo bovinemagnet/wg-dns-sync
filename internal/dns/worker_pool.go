@@ -57,7 +57,7 @@ func ResolveHosts(ctx context.Context, resolver IPResolver, hosts []string, cfg 
 				}
 			}
 			if len(filtered) == 0 {
-				results <- LookupResult{Host: host, Err: fmt.Errorf("no DNS records found for enabled families")}
+				results <- LookupResult{Host: host, Err: fmt.Errorf("no DNS records found for enabled families: %s", strings.Join(cfg.Families, ","))}
 				continue
 			}
 			results <- LookupResult{Host: host, IPs: filtered}

@@ -1,12 +1,14 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -176,9 +178,9 @@ func (c AppConfig) EffectiveOutputPath() string {
 }
 
 const defaultConfigTemplate = `wireguard:
-  config_path: "/etc/wireguard/wg0.conf"
+  config_path: "{{ .WireGuardPath }}"
   output_path: ""
-  target_peer_public_key: "REPLACE_WITH_PEER_PUBLIC_KEY"
+  target_peer_public_key: "{{ .PeerPublicKey }}"
   backup_dir: ""
   preserve_permissions: true
 
@@ -217,14 +219,27 @@ func InitConfigFile(configPath, wgConfigPath, peerPublicKey string) (string, err
 	if _, err := os.Stat(configPath); err == nil {
 		return "", fmt.Errorf("config already exists: %s", configPath)
 	}
-	content := defaultConfigTemplate
-	if strings.TrimSpace(wgConfigPath) != "" {
-		content = strings.Replace(content, "/etc/wireguard/wg0.conf", wgConfigPath, 1)
+	if strings.TrimSpace(wgConfigPath) == "" {
+		wgConfigPath = "/etc/wireguard/wg0.conf"
 	}
-	if strings.TrimSpace(peerPublicKey) != "" {
-		content = strings.Replace(content, "REPLACE_WITH_PEER_PUBLIC_KEY", peerPublicKey, 1)
+	if strings.TrimSpace(peerPublicKey) == "" {
+		peerPublicKey = "REPLACE_WITH_PEER_PUBLIC_KEY"
 	}
-	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+	tmpl, err := template.New("default-config").Parse(defaultConfigTemplate)
+	if err != nil {
+		return "", err
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, struct {
+		WireGuardPath string
+		PeerPublicKey string
+	}{
+		WireGuardPath: wgConfigPath,
+		PeerPublicKey: peerPublicKey,
+	}); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(configPath, buf.Bytes(), 0o600); err != nil {
 		return "", err
 	}
 	return configPath, nil
