@@ -8,29 +8,38 @@ import (
 	"strings"
 )
 
-func Build(staticCIDRs []string, resolvedIPs []netip.Addr) ([]netip.Prefix, error) {
-	set := map[netip.Prefix]struct{}{}
+// Build merges static CIDRs and resolved host addresses into a deduplicated
+// list of prefixes. Static entries are emitted before resolved entries, each in
+// the order supplied. When sortResult is true the combined list is sorted
+// deterministically (IPv4 before IPv6, then by address, then prefix length);
+// otherwise insertion order is preserved.
+func Build(staticCIDRs []string, resolvedIPs []netip.Addr, sortResult bool) ([]netip.Prefix, error) {
+	seen := map[netip.Prefix]struct{}{}
+	out := make([]netip.Prefix, 0, len(staticCIDRs)+len(resolvedIPs))
+	add := func(p netip.Prefix) {
+		if _, ok := seen[p]; ok {
+			return
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
 	for _, cidr := range staticCIDRs {
 		p, err := netip.ParsePrefix(strings.TrimSpace(cidr))
 		if err != nil {
 			return nil, fmt.Errorf("invalid static CIDR %q: %w", cidr, err)
 		}
-		set[p.Masked()] = struct{}{}
+		add(p.Masked())
 	}
 	for _, ip := range resolvedIPs {
 		bits := 128
 		if ip.Is4() {
 			bits = 32
 		}
-		p := netip.PrefixFrom(ip, bits).Masked()
-		set[p] = struct{}{}
+		add(netip.PrefixFrom(ip, bits).Masked())
 	}
-
-	out := make([]netip.Prefix, 0, len(set))
-	for prefix := range set {
-		out = append(out, prefix)
+	if sortResult {
+		slices.SortFunc(out, comparePrefix)
 	}
-	slices.SortFunc(out, comparePrefix)
 	return out, nil
 }
 
