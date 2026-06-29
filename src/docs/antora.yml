@@ -1,0 +1,6 @@
+name: wg-dns-sync
+title: wg-dns-sync
+version: '0.0.0'
+start_page: ROOT:index.adoc
+nav:
+  - modules/ROOT/nav.adoc

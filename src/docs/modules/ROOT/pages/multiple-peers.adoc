@@ -1,0 +1,36 @@
+= Multiple peers
+:description: How to update several WireGuard peers in one wg-dns-sync run using the peers list.
+
+By default, `wg-dns-sync` updates a single peer using the single-peer fields: `wireguard.target_peer_public_key` together with the top-level `allowed_ips` (which has `static` and `dns_names` sub-keys).
+See xref:configuration.adoc[Configuration].
+
+To update several peers in one run, add a top-level `peers` list.
+Each entry has its own `public_key`, optional `static` CIDRs, and `dns_names`.
+When a `peers` list is present it takes precedence and the single-peer fields (`target_peer_public_key` and top-level `allowed_ips`) are ignored.
+
+[source,yaml]
+----
+include::example$config-multipeer.yaml[]
+----
+
+== How peers are processed
+
+The xref:commands.adoc[`render`, `update`, and `diff`] commands process every peer in the list, replacing each peer's `AllowedIPs` with its own `static` CIDRs plus the host routes resolved from its own `dns_names`.
+
+* `validate` checks that every listed peer exists in the WireGuard config.
+* A DNS name shared by several peers is resolved only once per run, then applied to each peer that lists it.
+* Each peer's `AllowedIPs` is computed independently, so peers do not share routes unless they list the same entries.
+
+The following is an illustrative summary produced by the `update` command when two peers are configured:
+
+[source,text]
+----
+Resolved 2 DNS names.
+Updated peer PEER_A_PUBLIC_KEY: 2 AllowedIPs entries.
+Updated peer PEER_B_PUBLIC_KEY: 1 AllowedIPs entries.
+----
+
+== The resolve command
+
+`resolve` prints a single combined, de-duplicated view of all routes across every peer.
+Because `resolve` is a preview of resolved DNS routes rather than a per-peer config edit, it does not produce per-peer output — it shows the union of all `dns_names` entries across the full `peers` list.

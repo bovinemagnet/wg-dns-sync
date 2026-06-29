@@ -1,0 +1,172 @@
+= Configuration
+:description: Reference for all wg-dns-sync configuration file fields, output modes, and output formats.
+
+`wg-dns-sync` is configured through a YAML file.
+This page documents every field, the supported output modes, and the available output formats.
+
+== Config file location
+
+The default config path is derived from the OS user config directory:
+
+* Linux: `$XDG_CONFIG_HOME/wg-dns-sync/config.yaml`, falling back to `~/.config/wg-dns-sync/config.yaml`
+* macOS: `~/Library/Application Support/wg-dns-sync/config.yaml`
+* Windows: `%AppData%\wg-dns-sync\config.yaml`
+
+Override on any command with the global `--config /path/to/config.yaml` flag.
+Create a starter file with `wg-dns-sync init`.
+
+== Example configuration
+
+[source,yaml]
+----
+include::example$config.yaml[]
+----
+
+== Field reference
+
+=== wireguard section
+
+[cols="1,1,2,3",options="header"]
+|===
+| Key | Type | Default | Description
+
+| `config_path`
+| string
+| (none)
+| Path to the existing WireGuard config to read. Required for `update-config` mode.
+
+| `output_path`
+| string
+| Defaults to `config_path`
+| Where to write the generated config.
+
+| `target_peer_public_key`
+| string
+| (none)
+| The `[Peer]` whose `AllowedIPs` is updated. Required for `update-config` mode in single-peer configs.
+
+| `backup_dir`
+| string
+| Directory of `config_path`
+| Where backups are written.
+
+| `preserve_permissions`
+| boolean
+| `true`
+| Keep the original file mode when writing; otherwise files are written `0600`.
+|===
+
+=== allowed_ips section (single-peer form)
+
+[cols="1,1,2,3",options="header"]
+|===
+| Key | Type | Default | Description
+
+| `static`
+| list of CIDR strings
+| (none, optional)
+| Base CIDRs always kept in the peer's AllowedIPs.
+
+| `dns_names`
+| list of strings
+| (required)
+| DNS names to resolve.
+|===
+
+NOTE: To update more than one peer, use a top-level `peers` list instead — xref:multiple-peers.adoc[Multiple peers].
+
+=== dns section
+
+[cols="1,1,2,3",options="header"]
+|===
+| Key | Type | Default | Description
+
+| `concurrency`
+| integer
+| `6`
+| Number of concurrent lookup workers. Allowed range: 1–32. Recommended: 4–8.
+
+| `timeout`
+| duration string
+| `"3s"`
+| Per-host lookup timeout.
+
+| `retries`
+| integer
+| `1`
+| Retry attempts after an initial failure. Must be >= 0.
+
+| `families`
+| list
+| `["ipv4"]`
+| Address families to resolve. Allowed values: `ipv4`, `ipv6`.
+
+| `fail_on_lookup_error`
+| boolean
+| `true`
+| If `true`, any failed name fails the whole run; if `false`, failures are reported as a warning and successful names are still used.
+|===
+
+=== output section
+
+[cols="1,1,2,3",options="header"]
+|===
+| Key | Type | Default | Description
+
+| `mode`
+| string
+| `"update-config"`
+| Output mode. Allowed: `stdout`, `cidr-file`, `update-config`.
+
+| `path`
+| string
+| (none)
+| Required when mode is `cidr-file`; the file to write.
+
+| `format`
+| string
+| `"wireguard"`
+| Output format. Allowed: `plain`, `wireguard`, `json`.
+
+| `sort`
+| boolean
+| `true`
+| Sort generated CIDRs deterministically (IPv4 before IPv6, then by address, then prefix length). When `false`, insertion order is preserved (static first, then resolved).
+|===
+
+== Output modes
+
+* `stdout` — prints routes only; no file is modified.
+* `cidr-file` — writes the routes to the file specified in `output.path`.
+* `update-config` — reads the WireGuard config, updates the target peer(s), and requires `wireguard.config_path` plus a peer public key.
+
+== Output formats
+
+*plain* — one CIDR per line:
+
+[source,text]
+----
+203.0.113.10/32
+203.0.113.11/32
+----
+
+*wireguard* — a single AllowedIPs line:
+
+[source,text]
+----
+AllowedIPs = 10.0.0.0/8, 203.0.113.10/32
+----
+
+*json* — a JSON object:
+
+[source,json]
+----
+{ "allowed_ips": [ "10.0.0.0/8", "203.0.113.10/32" ] }
+----
+
+== Address families
+
+`ipv4` keeps IPv4 addresses and emits `/32` host routes; `ipv6` keeps IPv6 addresses and emits `/128` host routes.
+Listing both in `dns.families` retains both address types.
+
+See xref:exit-codes.adoc[Exit codes] for the failure behaviour of each mode.

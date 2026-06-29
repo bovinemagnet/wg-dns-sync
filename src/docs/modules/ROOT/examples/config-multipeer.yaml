@@ -1,0 +1,26 @@
+wireguard:
+  config_path: "/etc/wireguard/wg0.conf"
+  preserve_permissions: true
+
+peers:
+  - public_key: "PEER_A_PUBLIC_KEY"
+    static:
+      - "10.0.0.0/8"
+    dns_names:
+      - "service-a.example.com"
+  - public_key: "PEER_B_PUBLIC_KEY"
+    dns_names:
+      - "service-b.example.com"
+
+dns:
+  concurrency: 6
+  timeout: "3s"
+  retries: 1
+  families:
+    - "ipv4"
+  fail_on_lookup_error: true
+
+output:
+  mode: "update-config"
+  format: "wireguard"
+  sort: true
