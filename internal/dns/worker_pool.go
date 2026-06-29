@@ -23,11 +23,11 @@ func ResolveHosts(ctx context.Context, resolver IPResolver, hosts []string, cfg 
 		resolver = NetResolver{}
 	}
 	concurrency := cfg.Concurrency
-	if concurrency < 1 {
-		concurrency = 1
+	if concurrency < config.MinDNSConcurrency {
+		concurrency = config.MinDNSConcurrency
 	}
-	if concurrency > 32 {
-		concurrency = 32
+	if concurrency > config.MaxDNSConcurrency {
+		concurrency = config.MaxDNSConcurrency
 	}
 	timeout, err := time.ParseDuration(cfg.Timeout)
 	if err != nil {

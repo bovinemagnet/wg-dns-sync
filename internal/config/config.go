@@ -47,6 +47,11 @@ type OutputConfig struct {
 	Sort   bool   `yaml:"sort"`
 }
 
+const (
+	MinDNSConcurrency = 1
+	MaxDNSConcurrency = 32
+)
+
 func DefaultConfigPath() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {
@@ -111,8 +116,8 @@ func (c AppConfig) Validate() error {
 			return fmt.Errorf("invalid static CIDR %q: %w", cidr, err)
 		}
 	}
-	if c.DNS.Concurrency < 1 || c.DNS.Concurrency > 32 {
-		return errors.New("dns.concurrency must be between 1 and 32")
+	if c.DNS.Concurrency < MinDNSConcurrency || c.DNS.Concurrency > MaxDNSConcurrency {
+		return fmt.Errorf("dns.concurrency must be between %d and %d", MinDNSConcurrency, MaxDNSConcurrency)
 	}
 	if c.DNS.Retries < 0 {
 		return errors.New("dns.retries must be >= 0")

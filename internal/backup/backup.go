@@ -20,7 +20,7 @@ func Create(srcPath, backupDir string) (string, fs.FileMode, error) {
 	if err := os.MkdirAll(backupDir, 0o700); err != nil {
 		return "", 0, err
 	}
-	name := fmt.Sprintf("%s.bak.%s", filepath.Base(srcPath), time.Now().UTC().Format("20060102T150405"))
+	name := fmt.Sprintf("%s.bak.%s", filepath.Base(srcPath), time.Now().UTC().Format("20060102T150405.000000000"))
 	backupPath := filepath.Join(backupDir, name)
 	if _, err := os.Stat(backupPath); err == nil {
 		return "", 0, fmt.Errorf("backup already exists: %s", backupPath)
