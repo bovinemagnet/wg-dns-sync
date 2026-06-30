@@ -53,7 +53,8 @@ func PeerAllowedIPs(content, targetPublicKey string) ([]string, error) {
 }
 
 func UpdatePeerAllowedIPs(content, targetPublicKey string, allowedIPs []string) (string, error) {
-	lines := strings.Split(content, "\n")
+	nl := detectNewline(content)
+	lines := strings.Split(content, nl)
 	target, err := findTargetPeer(lines, targetPublicKey)
 	if err != nil {
 		return "", err
@@ -71,11 +72,21 @@ func UpdatePeerAllowedIPs(content, targetPublicKey string, allowedIPs []string) 
 		lines = append(lines[:insertAt], append([]string{allowedLine}, lines[insertAt:]...)...)
 	}
 
-	out := strings.Join(lines, "\n")
-	if strings.HasSuffix(content, "\n") && !strings.HasSuffix(out, "\n") {
-		out += "\n"
+	out := strings.Join(lines, nl)
+	if strings.HasSuffix(content, nl) && !strings.HasSuffix(out, nl) {
+		out += nl
 	}
 	return out, nil
+}
+
+// detectNewline reports the dominant line ending of content so that rewritten
+// configs keep the original style. WireGuard configs written on Windows use
+// CRLF; splitting and rejoining on the detected separator avoids mixing styles.
+func detectNewline(content string) string {
+	if strings.Contains(content, "\r\n") {
+		return "\r\n"
+	}
+	return "\n"
 }
 
 func ValidateTargetPeer(content, targetPublicKey string) error {

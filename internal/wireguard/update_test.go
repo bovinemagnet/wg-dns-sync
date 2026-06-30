@@ -26,6 +26,21 @@ Endpoint = example.com:51820
 	}
 }
 
+func TestUpdatePeerAllowedIPsPreservesCRLF(t *testing.T) {
+	input := "[Interface]\r\nPrivateKey = X\r\n\r\n[Peer]\r\nPublicKey = TARGET\r\nAllowedIPs = 10.0.0.0/8\r\nPersistentKeepalive = 25\r\n"
+	out, err := UpdatePeerAllowedIPs(input, "TARGET", []string{"203.0.113.10/32"})
+	if err != nil {
+		t.Fatalf("UpdatePeerAllowedIPs() error = %v", err)
+	}
+	// After stripping CRLF pairs, no bare LF should remain (no mixed endings).
+	if strings.Contains(strings.ReplaceAll(out, "\r\n", ""), "\n") {
+		t.Fatalf("output contains a bare LF (mixed line endings):\n%q", out)
+	}
+	if !strings.Contains(out, "AllowedIPs = 203.0.113.10/32\r\n") {
+		t.Fatalf("rewritten AllowedIPs line lost its CRLF:\n%q", out)
+	}
+}
+
 func TestPeerAllowedIPs(t *testing.T) {
 	input := `[Peer]
 PublicKey = TARGET
