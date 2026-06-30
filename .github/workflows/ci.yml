@@ -32,3 +32,19 @@ jobs:
 
       - name: Build
         run: go build ./...
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Antora
+        run: npm install -g antora@3.1
+
+      - name: Build documentation
+        run: antora --fetch antora-playbook.yml
