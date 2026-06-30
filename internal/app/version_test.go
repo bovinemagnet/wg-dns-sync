@@ -19,7 +19,12 @@ func TestVersionCommand(t *testing.T) {
 		t.Fatalf("version command failed: %v", err)
 	}
 
-	for _, want := range []string{"1.2.3", "abc1234", "2026-06-30T00:00:00Z", runtime.Version()} {
+	for _, want := range []string{
+		"1.2.3", "abc1234", "2026-06-30T00:00:00Z", runtime.Version(),
+		"Copyright (C) 2026  Paul Snow",
+		"AGPL-3.0-or-later",
+		"NO WARRANTY",
+	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("version output missing %q\ngot:\n%s", want, stdout)
 		}
