@@ -35,3 +35,6 @@ CLAUDE.md
 
 # Antora documentation build output
 /build/
+
+# GoReleaser build output
+/dist/
