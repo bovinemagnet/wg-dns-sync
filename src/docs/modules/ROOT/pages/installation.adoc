@@ -1,0 +1,114 @@
+= Installation
+:description: How to install the wg-dns-sync CLI, including building from source and setting up shell completion.
+
+`wg-dns-sync` is distributed as a Go binary.
+You can build it from source or install it directly with the Go toolchain.
+
+== Requirements
+
+* Go 1.24 or newer
+
+Verify your Go version before proceeding:
+
+[source,bash]
+----
+go version
+----
+
+== Build from source
+
+Clone the repository and build a local binary:
+
+[source,bash]
+----
+git clone https://github.com/bovinemagnet/wg-dns-sync.git
+cd wg-dns-sync
+go build -o wg-dns-sync ./cmd/wg-dns-sync
+----
+
+This produces a `wg-dns-sync` binary in the current directory.
+Move it to a directory on your `PATH` to make it available system-wide:
+
+[source,bash]
+----
+sudo mv wg-dns-sync /usr/local/bin/
+----
+
+== Install with go install
+
+To install the latest release directly from the module path:
+
+[source,bash]
+----
+go install github.com/bovinemagnet/wg-dns-sync/cmd/wg-dns-sync@latest
+----
+
+The binary is placed in `$(go env GOPATH)/bin`.
+Ensure that directory is on your `PATH`:
+
+[source,bash]
+----
+export PATH="$(go env GOPATH)/bin:$PATH"
+----
+
+Add that line to your shell's startup file (`~/.bashrc`, `~/.zshrc`, or equivalent) to make it permanent.
+
+== Verify the installation
+
+[source,bash]
+----
+wg-dns-sync --help
+----
+
+A usage summary confirms the binary is installed and reachable.
+
+== Shell completion
+
+`wg-dns-sync` can generate completion scripts for Bash, Zsh, Fish, and PowerShell.
+
+=== Bash
+
+[source,bash]
+----
+wg-dns-sync completion bash | sudo tee /etc/bash_completion.d/wg-dns-sync > /dev/null
+----
+
+NOTE: Open a new shell session for the completion to take effect.
+
+=== Zsh
+
+[source,zsh]
+----
+wg-dns-sync completion zsh > "${fpath[1]}/_wg-dns-sync"
+----
+
+NOTE: Open a new shell session for the completion to take effect.
+
+=== Fish
+
+Source completions for the current session:
+
+[source,fish]
+----
+wg-dns-sync completion fish | source
+----
+
+To persist completions across sessions, write them to the completions directory:
+
+[source,fish]
+----
+wg-dns-sync completion fish > ~/.config/fish/completions/wg-dns-sync.fish
+----
+
+=== PowerShell
+
+[source,powershell]
+----
+wg-dns-sync completion powershell | Out-String | Invoke-Expression
+----
+
+NOTE: Open a new shell session for the completion to take effect.
+
+== Next steps
+
+Once installed, see xref:quickstart.adoc[Quick start] to run your first sync, or jump to the xref:commands.adoc[Command reference] for a full list of options.

@@ -1,0 +1,154 @@
+= Command reference
+:description: Full reference for every wg-dns-sync command and flag.
+
+`wg-dns-sync` provides a set of subcommands for managing WireGuard `AllowedIPs` entries from DNS.
+Each command shares the following persistent flag:
+
+`--config <path>`::
+Override the default configuration file location.
+See xref:configuration.adoc[Configuration] for the default path and file format.
+
+== init
+
+Creates a starter configuration file.
+This command does not read or modify any WireGuard config.
+
+[source,bash]
+----
+wg-dns-sync init [flags]
+----
+
+`--wg-config <path>`::
+Pre-fill the WireGuard configuration path in the generated file.
+
+`--peer-public-key <key>`::
+Pre-fill the target peer public key in the generated file.
+
+`--interactive`::
+Prompt for the WireGuard config path, target peer public key, and a comma-separated list of DNS names instead of writing the static template.
+
+== resolve
+
+Resolves the configured DNS names and prints the generated `AllowedIPs` value.
+This command performs DNS lookups only; it does not read or write any WireGuard configuration.
+
+[source,bash]
+----
+wg-dns-sync resolve [flags]
+----
+
+`--concurrency <n>`::
+Override the number of concurrent DNS workers.
+Accepts a value between 1 and 32.
+
+`--format <plain|wireguard|json>`::
+Select the output format.
+`plain` lists one CIDR per line, `wireguard` produces a ready-to-paste `AllowedIPs` line, and `json` emits a JSON array.
+
+Example — resolve and print in WireGuard format:
+
+[source,bash]
+----
+wg-dns-sync resolve --format wireguard
+----
+
+[source,text]
+----
+AllowedIPs = 10.0.0.0/8, 203.0.113.10/32
+----
+
+== render
+
+Reads the existing WireGuard configuration, updates the target peer or peers in memory with the freshly resolved `AllowedIPs`, and prints the complete updated configuration to stdout.
+Nothing is written to disk.
+
+[source,bash]
+----
+wg-dns-sync render
+----
+
+This command has no command-specific flags.
+
+== diff
+
+Compares the current `AllowedIPs` values in the WireGuard configuration with the freshly resolved set and prints a per-peer diff.
+Nothing is written to disk.
+
+[source,bash]
+----
+wg-dns-sync diff
+----
+
+This command has no command-specific flags.
+
+Example output showing one address removed and one added:
+
+[source,text]
+----
+Peer REPLACE_WITH_PEER_PUBLIC_KEY AllowedIPs:
+- 198.51.100.10/32
++ 203.0.113.10/32
+----
+
+A peer whose resolved set matches the current configuration prints `unchanged`.
+
+== update
+
+Safely rewrites the WireGuard configuration.
+The command resolves DNS, validates that every target peer exists in the configuration, creates a timestamped backup of the current file, then writes the updated configuration atomically.
+A summary of changes is printed on completion.
+
+[source,bash]
+----
+wg-dns-sync update [flags]
+----
+
+`--dry-run`::
+Resolve and render the updated configuration but write nothing to disk.
+
+`--backup-dir <dir>`::
+Write the timestamped backup to this directory.
+Defaults to the directory containing the WireGuard configuration file.
+
+`--output <path>`::
+Write the result to this path instead of updating the source file in place.
+
+== validate
+
+Validates the application configuration and the WireGuard configuration without performing any DNS resolution.
+The following checks are performed:
+
+* The application configuration file parses without error.
+* At least one DNS name is configured.
+* All static CIDRs in the configuration are valid.
+* The WireGuard configuration file is readable.
+* Every target peer named in the application configuration exists in the WireGuard configuration and can receive an `AllowedIPs` line.
+
+[source,bash]
+----
+wg-dns-sync validate
+----
+
+This command has no command-specific flags.
+
+== completion
+
+Generates a shell completion script and prints it to stdout.
+Accepts one argument: the target shell.
+
+[source,bash]
+----
+wg-dns-sync completion <bash|zsh|fish|powershell>
+----
+
+Example — source completions for the current Fish session:
+
+[source,bash]
+----
+wg-dns-sync completion fish | source
+----
+
+---
+
+Failure behaviour and exit codes are documented in xref:exit-codes.adoc[Exit codes].
+Updating several peers in one run is covered in xref:multiple-peers.adoc[Multiple peers].

@@ -1,0 +1,41 @@
+= Introduction
+:description: Overview of wg-dns-sync and how it keeps WireGuard AllowedIPs in sync with DNS.
+
+`wg-dns-sync` is a cross-platform command-line tool (Linux, macOS, Windows) that resolves a configured list of DNS names to their current IP addresses, converts each address to a WireGuard host route (IPv4 → `/32`, IPv6 → `/128`), and keeps a target WireGuard peer's `AllowedIPs` up to date.
+
+== The problem it solves
+
+Cloud-hosted resources — for example AWS instances without an Elastic IP — often change their public IP address over time. WireGuard configuration files are static, so a peer's `AllowedIPs` can hold stale routes and traffic stops flowing. This tool refreshes those routes from DNS.
+
+== How it works
+
+Each run computes a fresh, complete `AllowedIPs` value as `static base CIDRs + freshly resolved DNS host routes`, then replaces the target peer's `AllowedIPs` with that value. Because every run recomputes the full set, stale DNS-derived addresses never accumulate. The tool does not try to guess which existing routes are dynamic — you declare the static base CIDRs and the DNS names, and it owns the result.
+
+.Example: resolved AllowedIPs
+[source,ini]
+----
+AllowedIPs = 10.0.0.0/24, 203.0.113.42/32
+----
+
+== Output modes
+
+`stdout`:: Print the resolved routes to standard output.
+`cidr-file`:: Write the routes to a standalone file.
+`update-config`:: Safely back up and rewrite the WireGuard config file.
+
+See xref:configuration.adoc[Configuration] for details on each mode.
+
+== Safety
+
+Before rewriting a config, the tool creates a timestamped backup and writes the new file atomically. It preserves the rest of the config and never prints private keys.
+
+== What it does not do
+
+* Does not run as a daemon
+* Does not restart WireGuard or run `wg syncconf`
+* Does not call cloud provider APIs
+
+== Next steps
+
+See xref:installation.adoc[Installation] to get the binary on your system.
+Then follow xref:quickstart.adoc[Quick start] to run your first sync.

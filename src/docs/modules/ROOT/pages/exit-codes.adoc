@@ -1,0 +1,52 @@
+= Exit codes
+:description: Exit codes returned by every wg-dns-sync command, and what they mean in scripts, cron jobs, and timers.
+
+Every command exits with one of these codes, which makes the tool suitable for use in scripts, cron jobs, and timers.
+
+[cols="^1,4",options="header"]
+|===
+| Code | Meaning
+
+| 0
+| Success
+
+| 1
+| General error
+
+| 2
+| Invalid CLI arguments
+
+| 3
+| Invalid application config
+
+| 4
+| DNS resolution failure
+
+| 5
+| WireGuard config parse or update failure
+
+| 6
+| Backup or write failure
+|===
+
+== When they occur
+
+Code 3 is returned when the config file cannot be parsed, the DNS name list is empty, or a static CIDR is invalid.
+
+Code 4 is returned when a lookup fails and `dns.fail_on_lookup_error` is true (see xref:configuration.adoc[Configuration]).
+
+Code 5 is returned when the WireGuard config cannot be read, the target peer is not found, or more than one peer matches the target public key.
+
+Code 6 is returned when the backup cannot be created or the new config cannot be written; in that case the original file is left untouched.
+
+=== Partial DNS failures
+
+When `dns.fail_on_lookup_error` is false, names that fail to resolve are reported as a warning on standard error and the run still succeeds with exit code 0, using the routes from the names that did resolve.
+
+[source,text]
+----
+WARNING: failed to resolve 1 of 5 DNS names.
+Generated AllowedIPs from remaining 4 names.
+----
+
+See also xref:commands.adoc[Command reference].

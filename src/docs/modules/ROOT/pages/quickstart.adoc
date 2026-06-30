@@ -1,0 +1,88 @@
+= Quick start
+
+The global persistent flag `--config <path>` overrides the default config location on every command.
+See xref:configuration.adoc[Configuration] for details of where the default config file lives.
+
+== Step 1: Create a starter config
+
+Run `wg-dns-sync init` to generate a starter config file in the default location.
+Alternatively, `wg-dns-sync init --interactive` prompts for:
+
+* the WireGuard config path
+* the target peer public key
+* a comma-separated list of DNS names
+
+[source,bash]
+----
+wg-dns-sync init
+wg-dns-sync init --interactive
+----
+
+== Step 2: Edit the config
+
+Open the generated file and set:
+
+* the WireGuard config path
+* the target peer public key
+* static base CIDRs
+* DNS names
+
+See xref:configuration.adoc[Configuration] for the full reference.
+
+== Step 3: Preview resolved routes
+
+Run `wg-dns-sync resolve --format wireguard` to resolve DNS names to their current IP addresses without modifying anything:
+
+[source,bash]
+----
+wg-dns-sync resolve --format wireguard
+----
+
+[source,text]
+----
+AllowedIPs = 10.0.0.0/8, 203.0.113.10/32, 203.0.113.11/32
+----
+
+This resolves all configured DNS names and displays the resulting `AllowedIPs` line.
+No files are written.
+
+== Step 4: See what would change
+
+Run `wg-dns-sync diff` to compare the peer's current `AllowedIPs` against the resolved result:
+
+[source,bash]
+----
+wg-dns-sync diff
+----
+
+[source,text]
+----
+Peer REPLACE_WITH_PEER_PUBLIC_KEY AllowedIPs:
+  - 198.51.100.10/32
+  + 203.0.113.10/32
+  + 203.0.113.11/32
+----
+
+== Step 5: Dry run, then apply
+
+Perform a dry run first to verify the changes without writing anything, then apply with elevated privileges:
+
+[source,bash]
+----
+wg-dns-sync update --dry-run
+sudo wg-dns-sync update
+----
+
+The `--dry-run` flag writes nothing.
+When satisfied, `sudo wg-dns-sync update` creates a timestamped backup and then atomically rewrites the config:
+
+[source,text]
+----
+Resolved 2 DNS names.
+Updated peer REPLACE_WITH_PEER_PUBLIC_KEY: 3 AllowedIPs entries.
+Backup written to /etc/wireguard/wg0.conf.bak.20260630T153045.ab12cd34
+Config written to /etc/wireguard/wg0.conf
+----
+
+Updating several peers at once is covered in xref:multiple-peers.adoc[Multiple peers].
+The full flag list is in xref:commands.adoc[Command reference].
