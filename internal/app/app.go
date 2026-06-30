@@ -30,8 +30,9 @@ func NewRootCommand() *cobra.Command {
 func newRootCommand(resolver dns.IPResolver) *cobra.Command {
 	var configPath string
 	cmd := &cobra.Command{
-		Use:   "wg-dns-sync",
-		Short: "Sync WireGuard AllowedIPs from DNS",
+		Use:     "wg-dns-sync",
+		Short:   "Sync WireGuard AllowedIPs from DNS",
+		Version: Version,
 	}
 	cmd.PersistentFlags().StringVar(&configPath, "config", "", "path to config file")
 
@@ -42,6 +43,7 @@ func newRootCommand(resolver dns.IPResolver) *cobra.Command {
 	cmd.AddCommand(newUpdateCmd(&configPath, resolver))
 	cmd.AddCommand(newValidateCmd(&configPath))
 	cmd.AddCommand(newCompletionCmd())
+	cmd.AddCommand(newVersionCmd())
 	return cmd
 }
 

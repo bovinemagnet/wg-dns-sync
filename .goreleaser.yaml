@@ -1,0 +1,81 @@
+# GoReleaser configuration for wg-dns-sync.
+# Validate with:  goreleaser check
+# Dry run with:   goreleaser release --snapshot --clean
+# Docs:           https://goreleaser.com
+version: 2
+
+project_name: wg-dns-sync
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: wg-dns-sync
+    main: ./cmd/wg-dns-sync
+    binary: wg-dns-sync
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/bovinemagnet/wg-dns-sync/internal/app.Version={{ .Version }}
+      - -X github.com/bovinemagnet/wg-dns-sync/internal/app.Commit={{ .Commit }}
+      - -X github.com/bovinemagnet/wg-dns-sync/internal/app.Date={{ .Date }}
+
+archives:
+  - id: wg-dns-sync
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.adoc
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+nfpms:
+  - id: wg-dns-sync
+    package_name: wg-dns-sync
+    maintainer: Paul Snow <bovinemagnet@gmail.com>
+    description: Resolve DNS names and keep a WireGuard peer's AllowedIPs up to date.
+    homepage: https://github.com/bovinemagnet/wg-dns-sync
+    formats:
+      - deb
+      - rpm
+
+homebrew_casks:
+  - name: wg-dns-sync
+    repository:
+      owner: bovinemagnet
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/bovinemagnet/wg-dns-sync
+    description: Resolve DNS names and keep a WireGuard peer's AllowedIPs up to date.
+    # license: add once a LICENSE file is present in the repository.
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
