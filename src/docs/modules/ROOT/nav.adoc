@@ -4,4 +4,5 @@
 * xref:configuration.adoc[Configuration]
 * xref:commands.adoc[Command reference]
 * xref:multiple-peers.adoc[Multiple peers]
+* xref:scheduling.adoc[Scheduling]
 * xref:exit-codes.adoc[Exit codes]

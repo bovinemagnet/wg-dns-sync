@@ -1,0 +1,10 @@
+[Unit]
+Description=Update WireGuard AllowedIPs from DNS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/wg-dns-sync update --config /etc/wg-dns-sync/config.yaml
+# Apply changes to the live interface as well:
+# ExecStart=/usr/local/bin/wg-dns-sync update --config /etc/wg-dns-sync/config.yaml --sync

@@ -34,6 +34,26 @@ func TestBuildPreservesOrderWhenUnsorted(t *testing.T) {
 	assertOrder(t, ToStrings(got), want)
 }
 
+func TestAggregateSummarisesHostRoutes(t *testing.T) {
+	in := []netip.Prefix{
+		netip.MustParsePrefix("203.0.113.10/32"),
+		netip.MustParsePrefix("203.0.113.20/32"),
+		netip.MustParsePrefix("10.0.0.0/8"),      // already broader than /24 — unchanged
+		netip.MustParsePrefix("2001:db8::1/128"), // -> /64
+	}
+	got := Aggregate(in, 24, 64, true)
+	want := []string{"10.0.0.0/8", "203.0.113.0/24", "2001:db8::/64"}
+	assertOrder(t, ToStrings(got), want)
+}
+
+func TestAggregateLeavesShorterPrefixesAlone(t *testing.T) {
+	in := []netip.Prefix{netip.MustParsePrefix("192.168.0.0/16")}
+	got := Aggregate(in, 24, 64, true)
+	if len(got) != 1 || got[0].String() != "192.168.0.0/16" {
+		t.Fatalf("got %v, want [192.168.0.0/16]", ToStrings(got))
+	}
+}
+
 func assertOrder(t *testing.T, got, want []string) {
 	t.Helper()
 	if len(got) != len(want) {

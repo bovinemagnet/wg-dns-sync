@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -16,18 +17,22 @@ import (
 	"github.com/bovinemagnet/wg-dns-sync/internal/backup"
 	"github.com/bovinemagnet/wg-dns-sync/internal/config"
 	"github.com/bovinemagnet/wg-dns-sync/internal/dns"
+	"github.com/bovinemagnet/wg-dns-sync/internal/metrics"
 	"github.com/bovinemagnet/wg-dns-sync/internal/output"
+	"github.com/bovinemagnet/wg-dns-sync/internal/wgsync"
 	"github.com/bovinemagnet/wg-dns-sync/internal/wireguard"
 )
 
-// NewRootCommand builds the CLI using the system DNS resolver.
+// NewRootCommand builds the CLI using the system DNS resolver and the real
+// `wg syncconf` runner.
 func NewRootCommand() *cobra.Command {
-	return newRootCommand(nil)
+	return newRootCommand(nil, nil)
 }
 
-// newRootCommand builds the CLI with an injectable resolver. A nil resolver
-// falls back to the system resolver; tests pass a fake to avoid real lookups.
-func newRootCommand(resolver dns.IPResolver) *cobra.Command {
+// newRootCommand builds the CLI with an injectable resolver and syncer. A nil
+// resolver falls back to the system resolver and a nil syncer to the real
+// command runner; tests pass fakes to avoid real lookups or shelling out.
+func newRootCommand(resolver dns.IPResolver, syncer wgsync.Syncer) *cobra.Command {
 	var configPath string
 	cmd := &cobra.Command{
 		Use:     "wg-dns-sync",
@@ -40,7 +45,7 @@ func newRootCommand(resolver dns.IPResolver) *cobra.Command {
 	cmd.AddCommand(newResolveCmd(&configPath, resolver))
 	cmd.AddCommand(newRenderCmd(&configPath, resolver))
 	cmd.AddCommand(newDiffCmd(&configPath, resolver))
-	cmd.AddCommand(newUpdateCmd(&configPath, resolver))
+	cmd.AddCommand(newUpdateCmd(&configPath, resolver, syncer))
 	cmd.AddCommand(newValidateCmd(&configPath))
 	cmd.AddCommand(newCompletionCmd())
 	cmd.AddCommand(newVersionCmd())
@@ -198,10 +203,11 @@ func newRenderCmd(configPath *string, resolver dns.IPResolver) *cobra.Command {
 	return cmd
 }
 
-func newUpdateCmd(configPath *string, resolver dns.IPResolver) *cobra.Command {
+func newUpdateCmd(configPath *string, resolver dns.IPResolver, syncer wgsync.Syncer) *cobra.Command {
 	var dryRun bool
 	var backupDir string
 	var outputPathFlag string
+	var sync bool
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Safely update WireGuard config",
@@ -257,6 +263,25 @@ func newUpdateCmd(configPath *string, resolver dns.IPResolver) *cobra.Command {
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Backup written to %s\n", backupPath)
 			fmt.Fprintf(cmd.OutOrStdout(), "Config written to %s\n", outputPath)
+
+			if sync || cfg.WireGuard.Sync {
+				s := syncer
+				if s == nil {
+					s = wgsync.CommandSyncer{}
+				}
+				iface := wgsync.InterfaceName(cfg.WireGuard.ConfigPath, cfg.WireGuard.Interface)
+				if err := s.Sync(cmd.Context(), iface, outputPath); err != nil {
+					return wrapExit(ExitCodeWireGuardFailure, err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Applied changes to interface %s with wg syncconf.\n", iface)
+			}
+
+			if path := strings.TrimSpace(cfg.Output.MetricsPath); path != "" {
+				if err := metrics.Write(path, runMetrics(summary, peers)); err != nil {
+					return wrapExit(ExitCodeWriteFailure, err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Metrics written to %s\n", path)
+			}
 			summary.printWarnings(cmd.ErrOrStderr())
 			return nil
 		},
@@ -264,6 +289,7 @@ func newUpdateCmd(configPath *string, resolver dns.IPResolver) *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Render and validate, but do not write files")
 	cmd.Flags().StringVar(&backupDir, "backup-dir", "", "Backup directory override")
 	cmd.Flags().StringVar(&outputPathFlag, "output", "", "Output config path override")
+	cmd.Flags().BoolVar(&sync, "sync", false, "Apply the new config to the live interface with wg syncconf")
 	return cmd
 }
 
@@ -471,6 +497,7 @@ func resolveAllowedIPs(ctx context.Context, resolver dns.IPResolver, cfg config.
 	if err != nil {
 		return nil, resolveSummary{}, wrapExit(ExitCodeInvalidConfig, err)
 	}
+	prefixes = aggregatePrefixes(cfg, prefixes)
 	if cfg.Output.Mode == "cidr-file" {
 		text, formatErr := allowedips.Format(prefixes, cfg.Output.Format)
 		if formatErr != nil {
@@ -484,6 +511,30 @@ func resolveAllowedIPs(ctx context.Context, resolver dns.IPResolver, cfg config.
 		return nil, resolveSummary{}, wrapExit(ExitCodeDNSFailure, errors.New("no AllowedIPs generated"))
 	}
 	return prefixes, summary, nil
+}
+
+// runMetrics derives the Prometheus metrics for a completed update from its
+// resolution summary and the per-peer results.
+func runMetrics(summary resolveSummary, peers []peerPrefixes) metrics.Metrics {
+	entries := 0
+	for _, p := range peers {
+		entries += len(p.Prefixes)
+	}
+	return metrics.Metrics{
+		LastRunSeconds:  time.Now().Unix(),
+		ResolvedTotal:   summary.HostCount - summary.WarningCount,
+		FailedTotal:     summary.WarningCount,
+		AllowedIPsTotal: entries,
+	}
+}
+
+// aggregatePrefixes summarises the prefixes when aggregation is enabled,
+// otherwise returns them unchanged.
+func aggregatePrefixes(cfg config.AppConfig, prefixes []netip.Prefix) []netip.Prefix {
+	if !cfg.Aggregate.Enabled {
+		return prefixes
+	}
+	return allowedips.Aggregate(prefixes, cfg.Aggregate.MaxIPv4Prefix, cfg.Aggregate.MaxIPv6Prefix, cfg.Output.Sort)
 }
 
 // resolvePeerPrefixes resolves DNS once and returns the AllowedIPs set for each
@@ -508,7 +559,7 @@ func resolvePeerPrefixes(ctx context.Context, resolver dns.IPResolver, cfg confi
 		if len(resolved) == 0 && len(t.Static) == 0 {
 			return nil, resolveSummary{}, wrapExit(ExitCodeDNSFailure, fmt.Errorf("peer %s: no AllowedIPs generated", t.PublicKey))
 		}
-		out = append(out, peerPrefixes{PublicKey: t.PublicKey, Prefixes: prefixes})
+		out = append(out, peerPrefixes{PublicKey: t.PublicKey, Prefixes: aggregatePrefixes(cfg, prefixes)})
 	}
 	return out, summary, nil
 }
