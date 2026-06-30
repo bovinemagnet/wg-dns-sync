@@ -32,3 +32,6 @@ go.work.sum
 # .vscode/
 docs/initial-prd.md
 CLAUDE.md
+
+# Antora documentation build output
+/build/
