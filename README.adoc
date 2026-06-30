@@ -52,6 +52,7 @@ Full usage documentation is maintained as an Antora AsciiDoc component under
 * link:src/docs/modules/ROOT/pages/configuration.adoc[Configuration]
 * link:src/docs/modules/ROOT/pages/commands.adoc[Command reference]
 * link:src/docs/modules/ROOT/pages/multiple-peers.adoc[Multiple peers]
+* link:src/docs/modules/ROOT/pages/scheduling.adoc[Scheduling]
 * link:src/docs/modules/ROOT/pages/exit-codes.adoc[Exit codes]
 
 Build the documentation site locally with Antora:

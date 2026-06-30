@@ -54,6 +54,16 @@ include::example$config.yaml[]
 | boolean
 | `true`
 | Keep the original file mode when writing; otherwise files are written `0600`.
+
+| `interface`
+| string
+| Derived from `config_path`
+| WireGuard interface name used by `wg syncconf`. Defaults to the config file name without its extension (for example `wg0.conf` becomes `wg0`).
+
+| `sync`
+| boolean
+| `false`
+| Apply the new config to the live interface with `wg syncconf` after a successful `update`. Equivalent to the `--sync` flag.
 |===
 
 === allowed_ips section (single-peer form)
@@ -132,6 +142,11 @@ NOTE: To update more than one peer, use a top-level `peers` list instead — xre
 | boolean
 | `true`
 | Sort generated CIDRs deterministically (IPv4 before IPv6, then by address, then prefix length). When `false`, insertion order is preserved (static first, then resolved).
+
+| `metrics_path`
+| string
+| (none)
+| When set, `update` writes a Prometheus textfile-collector `.prom` file here after a successful run.
 |===
 
 == Output modes
@@ -168,5 +183,60 @@ AllowedIPs = 10.0.0.0/8, 203.0.113.10/32
 
 `ipv4` keeps IPv4 addresses and emits `/32` host routes; `ipv6` keeps IPv6 addresses and emits `/128` host routes.
 Listing both in `dns.families` retains both address types.
+
+== Aggregation
+
+The optional top-level `aggregate` section summarises generated host routes into
+larger prefixes. It is off by default, because over-broad routes can be
+dangerous. When enabled, any prefix more specific than the per-family maximum is
+replaced with the maximum-length network that contains it; prefixes already at
+or shorter than the maximum are left unchanged. Aggregation applies to every
+peer's computed set.
+
+[source,yaml]
+----
+aggregate:
+  enabled: true
+  max_ipv4_prefix: 24
+  max_ipv6_prefix: 64
+----
+
+[cols="1,1,2,3",options="header"]
+|===
+| Key | Type | Default | Description
+
+| `enabled`
+| boolean
+| `false`
+| Turn aggregation on.
+
+| `max_ipv4_prefix`
+| integer
+| `24`
+| Broadest IPv4 prefix length produced. Allowed range: 1–32.
+
+| `max_ipv6_prefix`
+| integer
+| `64`
+| Broadest IPv6 prefix length produced. Allowed range: 1–128.
+|===
+
+With the settings above, `203.0.113.10/32` and `203.0.113.20/32` both collapse to
+`203.0.113.0/24`, while a broader static route such as `10.0.0.0/8` is unchanged.
+
+== Metrics
+
+When `output.metrics_path` is set, a successful `update` writes a Prometheus
+textfile-collector file, suitable for scraping with the node_exporter textfile
+collector. It contains the last run timestamp and the resolved, failed, and
+written-entry counts:
+
+[source,text]
+----
+wg_dns_sync_last_run_seconds 1717000000
+wg_dns_sync_resolved_total 4
+wg_dns_sync_failed_total 1
+wg_dns_sync_allowedips_entries 5
+----
 
 See xref:exit-codes.adoc[Exit codes] for the failure behaviour of each mode.

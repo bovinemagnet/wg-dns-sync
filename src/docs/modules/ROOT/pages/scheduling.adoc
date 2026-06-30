@@ -1,0 +1,82 @@
+= Scheduling
+:description: How to run wg-dns-sync automatically on a schedule using systemd, launchd, or Windows Task Scheduler.
+
+`wg-dns-sync update` is a one-shot command, which makes it a natural fit for a periodic scheduler.
+Run it on a cron-style timer and each execution resolves the current DNS addresses for your peers, rewrites the WireGuard configuration, and exits.
+
+Two options are worth adding to the scheduled command:
+
+* `--sync` — applies the refreshed configuration to the live WireGuard interface immediately after writing it.
+  See the xref:commands.adoc[Command reference] for details.
+* `output.metrics_path` in the configuration file — causes each run to write a Prometheus metrics file that your monitoring stack can scrape.
+  See xref:configuration.adoc[Configuration] for the full field reference.
+
+== Linux (systemd timer)
+
+The recommended approach on Linux is a systemd service and timer pair.
+The service unit defines what to run; the timer unit defines when to run it.
+
+Copy the following service file to `/etc/systemd/system/wg-dns-sync.service`:
+
+[source,ini]
+----
+include::example$systemd/wg-dns-sync.service[]
+----
+
+Copy the following timer file to `/etc/systemd/system/wg-dns-sync.timer`:
+
+[source,ini]
+----
+include::example$systemd/wg-dns-sync.timer[]
+----
+
+After copying both files, reload systemd and enable the timer:
+
+[source,bash]
+----
+systemctl daemon-reload
+systemctl enable --now wg-dns-sync.timer
+----
+
+To confirm the timer is active and see its next scheduled run:
+
+[source,bash]
+----
+systemctl list-timers wg-dns-sync.timer
+----
+
+== macOS (launchd)
+
+On macOS, install a LaunchDaemon so the job runs as root at the system level, independent of any user session.
+
+Copy the following plist to `/Library/LaunchDaemons/com.example.wg-dns-sync.plist`:
+
+[source,xml]
+----
+include::example$launchd/com.example.wg-dns-sync.plist[]
+----
+
+Then load the daemon:
+
+[source,bash]
+----
+sudo launchctl load /Library/LaunchDaemons/com.example.wg-dns-sync.plist
+----
+
+The job runs every 15 minutes, controlled by the `StartInterval` key (900 seconds).
+
+== Windows (Task Scheduler)
+
+On Windows, register a scheduled task using PowerShell.
+The script below must be run in an elevated (Administrator) PowerShell session.
+It registers a task that repeats every 15 minutes and runs as the `SYSTEM` account.
+
+[source,powershell]
+----
+include::example$windows/register-task.ps1[]
+----
+
+== Privileges
+
+NOTE: Updating `/etc/wireguard` and running `wg syncconf` require root or administrator privileges, so the scheduled job must run as a privileged user.
+The examples above already satisfy this requirement: the systemd service runs as root, the launchd plist installs as a LaunchDaemon (root), and the Task Scheduler task runs as SYSTEM.

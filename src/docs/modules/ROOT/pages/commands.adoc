@@ -113,6 +113,12 @@ Defaults to the directory containing the WireGuard configuration file.
 `--output <path>`::
 Write the result to this path instead of updating the source file in place.
 
+`--sync`::
+After writing the configuration, apply it to the live WireGuard interface with `wg syncconf` (running `wg-quick strip` first), so changes take effect without restarting the tunnel.
+Equivalent to setting `wireguard.sync` in the config.
+The interface name comes from `wireguard.interface`, or is derived from the config file name.
+See xref:scheduling.adoc[Scheduling] for running this on a timer.
+
 == validate
 
 Validates the application configuration and the WireGuard configuration without performing any DNS resolution.
