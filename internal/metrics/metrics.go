@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Paul Snow
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package metrics writes a Prometheus textfile-collector file summarising the
 // most recent run, suitable for scraping via the node_exporter textfile
 // collector.

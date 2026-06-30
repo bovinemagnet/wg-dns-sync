@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Paul Snow
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package wgsync optionally applies an updated WireGuard configuration to a
 // running interface with `wg syncconf`, without restarting the tunnel.
 package wgsync

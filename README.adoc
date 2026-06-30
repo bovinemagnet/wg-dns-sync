@@ -61,3 +61,19 @@ Build the documentation site locally with Antora:
 ----
 npx antora antora-playbook.yml
 ----
+
+== Licence
+
+Copyright (C) 2026 Paul Snow.
+
+`wg-dns-sync` is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version (`AGPL-3.0-or-later`).
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+The full licence text is in the link:LICENSE[LICENSE] file, or see
+https://www.gnu.org/licenses/.

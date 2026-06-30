@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Paul Snow
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package app
 
 import (
@@ -37,7 +40,7 @@ func newRootCommand(resolver dns.IPResolver, syncer wgsync.Syncer) *cobra.Comman
 	cmd := &cobra.Command{
 		Use:     "wg-dns-sync",
 		Short:   "Sync WireGuard AllowedIPs from DNS",
-		Version: Version,
+		Version: resolvedVersion(),
 	}
 	cmd.PersistentFlags().StringVar(&configPath, "config", "", "path to config file")
 

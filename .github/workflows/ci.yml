@@ -48,3 +48,20 @@ jobs:
 
       - name: Build documentation
         run: antora --fetch antora-playbook.yml
+
+  license-headers:
+    name: license headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check SPDX headers
+        run: |
+          missing=$(find . -name '*.go' -not -path './vendor/*' -print0 \
+            | xargs -0 grep -L 'SPDX-License-Identifier' || true)
+          if [ -n "$missing" ]; then
+            echo "::error::Go files missing an SPDX-License-Identifier header:"
+            echo "$missing"
+            exit 1
+          fi
+          echo "All Go files carry an SPDX-License-Identifier header."

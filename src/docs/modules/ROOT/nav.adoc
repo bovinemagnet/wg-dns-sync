@@ -6,3 +6,4 @@
 * xref:multiple-peers.adoc[Multiple peers]
 * xref:scheduling.adoc[Scheduling]
 * xref:exit-codes.adoc[Exit codes]
+* xref:licence.adoc[Licence]
