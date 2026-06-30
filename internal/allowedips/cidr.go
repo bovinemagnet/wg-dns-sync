@@ -43,6 +43,34 @@ func Build(staticCIDRs []string, resolvedIPs []netip.Addr, sortResult bool) ([]n
 	return out, nil
 }
 
+// Aggregate replaces any prefix more specific than the per-family maximum with
+// the maximum-length network that contains it, then de-duplicates. Prefixes at
+// or shorter than the maximum are left unchanged. The result is sorted
+// deterministically when sortResult is true, otherwise first-seen order is kept.
+func Aggregate(prefixes []netip.Prefix, maxIPv4Prefix, maxIPv6Prefix int, sortResult bool) []netip.Prefix {
+	seen := make(map[netip.Prefix]struct{}, len(prefixes))
+	out := make([]netip.Prefix, 0, len(prefixes))
+	for _, p := range prefixes {
+		max := maxIPv6Prefix
+		if p.Addr().Is4() {
+			max = maxIPv4Prefix
+		}
+		q := p
+		if p.Bits() > max {
+			q = netip.PrefixFrom(p.Addr(), max).Masked()
+		}
+		if _, ok := seen[q]; ok {
+			continue
+		}
+		seen[q] = struct{}{}
+		out = append(out, q)
+	}
+	if sortResult {
+		slices.SortFunc(out, comparePrefix)
+	}
+	return out
+}
+
 func ToStrings(prefixes []netip.Prefix) []string {
 	out := make([]string, len(prefixes))
 	for i, p := range prefixes {

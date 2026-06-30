@@ -19,7 +19,17 @@ type AppConfig struct {
 	AllowedIPs AllowedIPsConfig `yaml:"allowed_ips"`
 	Peers      []PeerConfig     `yaml:"peers"`
 	DNS        DNSConfig        `yaml:"dns"`
+	Aggregate  AggregateConfig  `yaml:"aggregate"`
 	Output     OutputConfig     `yaml:"output"`
+}
+
+// AggregateConfig optionally summarises generated host routes into larger
+// prefixes. It applies to every peer's computed AllowedIPs set. Off by default
+// because over-broad routes can be dangerous.
+type AggregateConfig struct {
+	Enabled       bool `yaml:"enabled"`
+	MaxIPv4Prefix int  `yaml:"max_ipv4_prefix"`
+	MaxIPv6Prefix int  `yaml:"max_ipv6_prefix"`
 }
 
 // PeerConfig describes one peer to update when the optional top-level `peers`
@@ -45,6 +55,8 @@ type WireGuardConfig struct {
 	TargetPeerPublicKey string `yaml:"target_peer_public_key"`
 	BackupDir           string `yaml:"backup_dir"`
 	PreservePermissions bool   `yaml:"preserve_permissions"`
+	Interface           string `yaml:"interface"`
+	Sync                bool   `yaml:"sync"`
 }
 
 type AllowedIPsConfig struct {
@@ -61,10 +73,11 @@ type DNSConfig struct {
 }
 
 type OutputConfig struct {
-	Mode   string `yaml:"mode"`
-	Path   string `yaml:"path"`
-	Format string `yaml:"format"`
-	Sort   bool   `yaml:"sort"`
+	Mode        string `yaml:"mode"`
+	Path        string `yaml:"path"`
+	Format      string `yaml:"format"`
+	Sort        bool   `yaml:"sort"`
+	MetricsPath string `yaml:"metrics_path"`
 }
 
 const (
@@ -124,6 +137,14 @@ func (c *AppConfig) ApplyDefaults() {
 	}
 	if c.Output.Format == "" {
 		c.Output.Format = "wireguard"
+	}
+	if c.Aggregate.Enabled {
+		if c.Aggregate.MaxIPv4Prefix == 0 {
+			c.Aggregate.MaxIPv4Prefix = 24
+		}
+		if c.Aggregate.MaxIPv6Prefix == 0 {
+			c.Aggregate.MaxIPv6Prefix = 64
+		}
 	}
 }
 
@@ -193,6 +214,15 @@ func (c AppConfig) Validate() error {
 	}
 	if len(seenFamily) == 0 {
 		return errors.New("dns.families must include ipv4 and/or ipv6")
+	}
+
+	if c.Aggregate.Enabled {
+		if c.Aggregate.MaxIPv4Prefix < 1 || c.Aggregate.MaxIPv4Prefix > 32 {
+			return fmt.Errorf("aggregate.max_ipv4_prefix must be between 1 and 32")
+		}
+		if c.Aggregate.MaxIPv6Prefix < 1 || c.Aggregate.MaxIPv6Prefix > 128 {
+			return fmt.Errorf("aggregate.max_ipv6_prefix must be between 1 and 128")
+		}
 	}
 
 	switch c.Output.Mode {
