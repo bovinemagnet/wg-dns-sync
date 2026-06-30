@@ -1,5 +1,6 @@
 * xref:index.adoc[Introduction]
 * xref:installation.adoc[Installation]
+* xref:macos.adoc[macOS guide]
 * xref:quickstart.adoc[Quick start]
 * xref:configuration.adoc[Configuration]
 * xref:commands.adoc[Command reference]

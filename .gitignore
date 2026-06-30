@@ -38,3 +38,4 @@ CLAUDE.md
 
 # GoReleaser build output
 /dist/
+/.idea/

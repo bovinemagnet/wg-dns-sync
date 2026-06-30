@@ -59,13 +59,24 @@ nfpms:
 
 homebrew_casks:
   - name: wg-dns-sync
+    binaries:
+      - wg-dns-sync
     repository:
       owner: bovinemagnet
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/bovinemagnet/wg-dns-sync
     description: Resolve DNS names and keep a WireGuard peer's AllowedIPs up to date.
-    # license: add once a LICENSE file is present in the repository.
+    license: AGPL-3.0-or-later
+    caveats: |
+      `update --sync` shells out to `wg` and `wg-quick`, which are not bundled here.
+      Install them separately if you need it: brew install wireguard-tools
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/wg-dns-sync"]
+          end
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"

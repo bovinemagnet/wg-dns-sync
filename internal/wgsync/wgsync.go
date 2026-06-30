@@ -30,6 +30,9 @@ type CommandSyncer struct{}
 func (CommandSyncer) Sync(ctx context.Context, iface, configPath string) error {
 	stripped, err := exec.CommandContext(ctx, "wg-quick", "strip", configPath).Output()
 	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("wg-quick strip %s: %w: %s", configPath, err, strings.TrimSpace(string(exitErr.Stderr)))
+		}
 		return fmt.Errorf("wg-quick strip %s: %w", configPath, err)
 	}
 	tmp, err := os.CreateTemp("", "wg-dns-sync-*.conf")

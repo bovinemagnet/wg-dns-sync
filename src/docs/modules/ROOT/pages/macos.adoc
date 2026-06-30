@@ -1,0 +1,108 @@
+= Using wg-dns-sync on macOS
+:description: macOS-specific guidance for installing wg-dns-sync, the WireGuard CLI tools it depends on, and where Homebrew puts wg0.conf.
+
+This page is a macOS-specific companion to xref:installation.adoc[Installation].
+It covers installing the binary, getting `wg`/`wg-quick` available for `--sync`, and the Homebrew config file path conventions you'll hit on a Mac.
+
+== Install on macOS
+
+A Homebrew cask is planned once a tagged release exists:
+
+[source,bash]
+----
+brew install --cask bovinemagnet/tap/wg-dns-sync
+----
+
+The cask removes the macOS quarantine attribute from the binary as part of installation, so it should run without triggering a Gatekeeper "cannot be opened because the developer cannot be verified" prompt.
+
+No release has been tagged yet, so building from source works today and doesn't depend on the cask.
+Follow xref:installation.adoc[Installation] to clone the repository and build with `go build` or `go install` — those steps work unchanged on macOS.
+
+If you download a release tarball manually instead of using the cask, macOS Gatekeeper quarantines the binary on first download.
+Clear the quarantine attribute before running it:
+
+[source,bash]
+----
+xattr -d com.apple.quarantine ./wg-dns-sync
+----
+
+Alternatively, right-click the binary in Finder and choose *Open* once; macOS remembers your approval after that.
+
+== WireGuard prerequisites on macOS
+
+The WireGuard app from the Mac App Store is a sandboxed GUI application.
+It does not expose `wg` or `wg-quick` on the command line, and it keeps its configuration inside its own app container — it is unrelated to `wg-dns-sync` and cannot be used with it.
+
+For command-line WireGuard tooling, install `wireguard-tools` with Homebrew:
+
+[source,bash]
+----
+brew install wireguard-tools
+----
+
+This pulls in `wireguard-go` as a dependency — a userspace tunnel implementation, since macOS has no in-kernel WireGuard module — which Homebrew installs automatically.
+
+TIP: `resolve`, `render`, and plain `update` (without `--sync`) only read DNS and read/write the WireGuard config file directly.
+They never shell out to `wg` or `wg-quick`, so none of the above is required just to use those commands.
+Only `update --sync` (or `wireguard.sync: true` in the config) invokes `wg syncconf`, which needs `wireguard-tools` to be installed.
+
+Because `wg syncconf` changes a live network interface, `update --sync` typically needs to run with `sudo`.
+
+== Config file location on macOS
+
+Homebrew-installed `wireguard-tools` follows the convention `$(brew --prefix)/etc/wireguard/wg0.conf` for its configuration directory, which resolves differently depending on your Mac:
+
+* Apple Silicon: `/opt/homebrew/etc/wireguard/wg0.conf`
+* Intel: `/usr/local/etc/wireguard/wg0.conf`
+
+This differs from `/etc/wireguard/wg0.conf`, the path used in the generic Linux-oriented examples elsewhere in these docs (for example xref:quickstart.adoc[Quick start]).
+
+Discover the correct path on your machine with:
+
+[source,bash]
+----
+echo "$(brew --prefix)/etc/wireguard/wg0.conf"
+----
+
+== Worked example
+
+Install the WireGuard command-line tools, then point `wg-dns-sync` at the Homebrew-prefixed config path:
+
+[source,bash]
+----
+brew install wireguard-tools
+WG_CONFIG="$(brew --prefix)/etc/wireguard/wg0.conf"
+echo "$WG_CONFIG"
+----
+
+Generate a starter `wg-dns-sync` config that pre-fills the WireGuard config path and target peer:
+
+[source,bash]
+----
+wg-dns-sync init --wg-config "$WG_CONFIG" --peer-public-key REPLACE_WITH_PEER_PUBLIC_KEY
+----
+
+Edit the generated config to add your DNS names and static CIDRs, as described in xref:configuration.adoc[Configuration].
+Preview the change with a dry run before touching anything on disk:
+
+[source,bash]
+----
+wg-dns-sync update --dry-run
+----
+
+Once you're happy with the preview, apply the change and sync it to the live interface.
+`wg syncconf` requires elevated privileges, so run this with `sudo`:
+
+[source,bash]
+----
+sudo wg-dns-sync update --sync
+----
+
+== Scheduling on macOS
+
+To run `wg-dns-sync` automatically on a Mac, install it as a LaunchDaemon.
+See xref:scheduling.adoc[Scheduling] for the launchd mechanics and an example plist you can copy directly.
+
+== Next steps
+
+If you haven't already, walk through xref:quickstart.adoc[Quick start] for the general command flow, then check the xref:commands.adoc[Command reference] for the full flag list.
