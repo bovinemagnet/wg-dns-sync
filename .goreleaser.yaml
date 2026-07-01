@@ -64,7 +64,7 @@ homebrew_casks:
     repository:
       owner: bovinemagnet
       name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: https://github.com/bovinemagnet/wg-dns-sync
     description: Resolve DNS names and keep a WireGuard peer's AllowedIPs up to date.
     license: AGPL-3.0-or-later
