@@ -4,13 +4,14 @@
 package output
 
 import (
-	"os"
 	"strings"
+
+	"github.com/bovinemagnet/wg-dns-sync/internal/backup"
 )
 
 func WriteText(path, text string) error {
 	if !strings.HasSuffix(text, "\n") {
 		text += "\n"
 	}
-	return os.WriteFile(path, []byte(text), 0o600)
+	return backup.WriteAtomic(path, []byte(text), 0o600)
 }
