@@ -71,7 +71,7 @@ func UpdatePeerAllowedIPs(content, targetPublicKey string, allowedIPs []string) 
 			lines = append(lines[:idxs[i]], lines[idxs[i]+1:]...)
 		}
 	} else {
-		insertAt := target.end
+		insertAt := insertionPoint(lines, target)
 		lines = append(lines[:insertAt], append([]string{allowedLine}, lines[insertAt:]...)...)
 	}
 
@@ -85,8 +85,13 @@ func UpdatePeerAllowedIPs(content, targetPublicKey string, allowedIPs []string) 
 // detectNewline reports the dominant line ending of content so that rewritten
 // configs keep the original style. WireGuard configs written on Windows use
 // CRLF; splitting and rejoining on the detected separator avoids mixing styles.
+// It counts occurrences rather than checking for any CRLF, so a single stray
+// CRLF in an otherwise LF file doesn't misdetect the whole file as CRLF (which
+// would make section parsing find no line breaks at all).
 func detectNewline(content string) string {
-	if strings.Contains(content, "\r\n") {
+	crlf := strings.Count(content, "\r\n")
+	bareLF := strings.Count(content, "\n") - crlf
+	if crlf > bareLF {
 		return "\r\n"
 	}
 	return "\n"
@@ -123,6 +128,23 @@ func peerSections(lines []string) []sectionRange {
 		sections = append(sections, current)
 	}
 	return sections
+}
+
+// insertionPoint returns the line index at which a new key should be
+// inserted within sec: right after the section's last non-blank,
+// non-comment line, so it isn't misattributed to a trailing blank line or
+// comment that precedes the next section header.
+func insertionPoint(lines []string, sec sectionRange) int {
+	end := sec.end
+	for end > sec.start+1 {
+		t := strings.TrimSpace(lines[end-1])
+		if t == "" || strings.HasPrefix(t, "#") || strings.HasPrefix(t, ";") {
+			end--
+			continue
+		}
+		break
+	}
+	return end
 }
 
 func parseKV(line string) (string, string, bool) {

@@ -102,6 +102,9 @@ func lookupWithRetry(parent context.Context, resolver IPResolver, host string, t
 		cancel()
 		if err != nil {
 			lastErr = err
+			if parent.Err() != nil {
+				break
+			}
 			continue
 		}
 		ips := make([]netip.Addr, 0, len(raw))

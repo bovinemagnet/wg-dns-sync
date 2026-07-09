@@ -209,6 +209,52 @@ func TestResolveFullFailureFailsRun(t *testing.T) {
 	}
 }
 
+// TestResolveFullFailurePreservesExistingCidrFile guards against a failed run
+// (all lookups fail, no static CIDRs, fail_on_lookup_error: false) truncating
+// a previously written cidr-file to empty before the command errors out.
+func TestResolveFullFailurePreservesExistingCidrFile(t *testing.T) {
+	resolver := fakeResolver{errs: map[string]error{
+		"service-a.example.com": errors.New("timeout"),
+		"service-b.example.com": errors.New("timeout"),
+	}}
+	dir := t.TempDir()
+	cidrPath := filepath.Join(dir, "allowed.cidr")
+	existing := "203.0.113.0/24\n"
+	if err := os.WriteFile(cidrPath, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(dir, "config.yaml")
+	body := fmt.Sprintf(`allowed_ips:
+  dns_names:
+    - "service-a.example.com"
+    - "service-b.example.com"
+dns:
+  concurrency: 4
+  timeout: "1s"
+  retries: 0
+  families:
+    - "ipv4"
+  fail_on_lookup_error: false
+output:
+  mode: "cidr-file"
+  path: %q
+  format: "plain"
+  sort: true
+`, cidrPath)
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := run(resolver, "resolve", "--config", cfgPath)
+	if got := exitCode(t, err); got != ExitCodeDNSFailure {
+		t.Fatalf("exit code = %d, want %d", got, ExitCodeDNSFailure)
+	}
+	if got, readErr := os.ReadFile(cidrPath); readErr != nil || string(got) != existing {
+		t.Fatalf("cidr-file was modified on failed run: content=%q err=%v", got, readErr)
+	}
+}
+
 func TestRenderMatchesGolden(t *testing.T) {
 	resolver := fakeResolver{data: map[string][]net.IPAddr{
 		"service-a.example.com": ipv4("203.0.113.10"),
@@ -267,6 +313,74 @@ func TestUpdateWritesConfigAndBackup(t *testing.T) {
 	}
 	if content, _ := os.ReadFile(backups[0]); string(content) != string(original) {
 		t.Fatalf("backup content does not match original config")
+	}
+}
+
+// TestUpdateWithDistinctOutputPathBacksUpOutputFile guards against backing up
+// wireguard.config_path while writing to a different wireguard.output_path:
+// the backup must be of the file actually being overwritten.
+func TestUpdateWithDistinctOutputPathBacksUpOutputFile(t *testing.T) {
+	resolver := fakeResolver{data: map[string][]net.IPAddr{
+		"service-a.example.com": ipv4("203.0.113.10"),
+		"service-b.example.com": ipv4("203.0.113.11"),
+	}}
+	original, err := os.ReadFile("testdata/wg0.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	wgPath := filepath.Join(dir, "wg0.conf")
+	if err := os.WriteFile(wgPath, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outputPath := filepath.Join(dir, "wg0.out.conf")
+	existingOutput := []byte("this is the previous output-path content\n")
+	if err := os.WriteFile(outputPath, existingOutput, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(dir, "config.yaml")
+	body := fmt.Sprintf(`wireguard:
+  config_path: %q
+  output_path: %q
+  target_peer_public_key: "TARGET_PUBLIC_KEY"
+  preserve_permissions: true
+allowed_ips:
+  static:
+    - "10.0.0.0/8"
+  dns_names:
+    - "service-a.example.com"
+    - "service-b.example.com"
+dns:
+  concurrency: 4
+  timeout: "1s"
+  retries: 0
+  families:
+    - "ipv4"
+  fail_on_lookup_error: true
+output:
+  mode: "update-config"
+  format: "wireguard"
+  sort: true
+`, wgPath, outputPath)
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := run(resolver, "update", "--config", cfgPath); err != nil {
+		t.Fatalf("update error: %v", err)
+	}
+
+	if got, _ := os.ReadFile(wgPath); string(got) != string(original) {
+		t.Fatal("config_path was modified even though output_path was set")
+	}
+
+	backups := glob(t, dir, "wg0.out.conf.bak.*")
+	if len(backups) != 1 {
+		t.Fatalf("expected exactly one backup of the output-path file, found %d: %v", len(backups), backups)
+	}
+	if content, _ := os.ReadFile(backups[0]); string(content) != string(existingOutput) {
+		t.Fatalf("backup does not contain the previous output-path content, got %q", content)
 	}
 }
 
@@ -626,6 +740,20 @@ func TestCompletionGeneratesForEachShell(t *testing.T) {
 func TestCompletionRejectsUnknownShell(t *testing.T) {
 	if _, _, err := run(nil, "completion", "tcsh"); err == nil {
 		t.Fatal("expected error for unsupported shell")
+	}
+}
+
+// TestRootCommandSilencesErrorsAndUsage guards against cobra's default
+// behaviour of printing "Error: ..." plus the full usage/flags text on any
+// RunE failure; main.go already prints the error once via the ExitError, so
+// the root command must silence cobra's own printing.
+func TestRootCommandSilencesErrorsAndUsage(t *testing.T) {
+	root := newRootCommand(nil, nil)
+	if !root.SilenceErrors {
+		t.Error("expected SilenceErrors to be true on the root command")
+	}
+	if !root.SilenceUsage {
+		t.Error("expected SilenceUsage to be true on the root command")
 	}
 }
 
