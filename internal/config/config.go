@@ -185,6 +185,7 @@ func (c AppConfig) publicKeyField(i int) string {
 
 func (c AppConfig) Validate() error {
 	targets := c.PeerTargets()
+	seenKeys := map[string]int{}
 	for i, t := range targets {
 		if len(t.DNSNames) == 0 {
 			return fmt.Errorf("%s must not be empty", c.dnsNamesField(i))
@@ -193,6 +194,12 @@ func (c AppConfig) Validate() error {
 			if _, err := netip.ParsePrefix(cidr); err != nil {
 				return fmt.Errorf("invalid static CIDR %q: %w", cidr, err)
 			}
+		}
+		if key := strings.TrimSpace(t.PublicKey); key != "" {
+			if j, ok := seenKeys[key]; ok {
+				return fmt.Errorf("duplicate public_key %q: %s and %s target the same peer", key, c.publicKeyField(j), c.publicKeyField(i))
+			}
+			seenKeys[key] = i
 		}
 	}
 	if c.DNS.Concurrency < MinDNSConcurrency || c.DNS.Concurrency > MaxDNSConcurrency {

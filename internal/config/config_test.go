@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -49,6 +50,24 @@ func TestValidateMultiPeerRequiresPublicKeyForUpdate(t *testing.T) {
 	cfg.ApplyDefaults() // mode defaults to update-config
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected error for peer missing public_key in update-config mode")
+	}
+}
+
+func TestValidateRejectsDuplicatePublicKeys(t *testing.T) {
+	cfg := AppConfig{
+		WireGuard: WireGuardConfig{ConfigPath: "/etc/wireguard/wg0.conf"},
+		Peers: []PeerConfig{
+			{PublicKey: "SAME_KEY", DNSNames: []string{"a.example.com"}},
+			{PublicKey: "SAME_KEY", DNSNames: []string{"b.example.com"}},
+		},
+	}
+	cfg.ApplyDefaults()
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for duplicate peer public_key")
+	}
+	if !strings.Contains(err.Error(), "SAME_KEY") {
+		t.Fatalf("error should name the duplicated key, got: %v", err)
 	}
 }
 

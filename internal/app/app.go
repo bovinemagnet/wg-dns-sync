@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/netip"
 	"os"
 	"strings"
@@ -42,6 +43,11 @@ func newRootCommand(resolver dns.IPResolver, syncer wgsync.Syncer) *cobra.Comman
 		Short:   "Sync WireGuard AllowedIPs from DNS",
 		Version: resolvedVersion(),
 	}
+	// main.go prints the error carried by app.ExitError; without these, cobra
+	// would also print "Error: ..." plus the full usage/flags text on every
+	// RunE failure, duplicating the message and burying it under noise.
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
 	cmd.PersistentFlags().StringVar(&configPath, "config", "", "path to config file")
 
 	cmd.AddCommand(newInitCmd(&configPath))
@@ -248,14 +254,21 @@ func newUpdateCmd(configPath *string, resolver dns.IPResolver, syncer wgsync.Syn
 				return nil
 			}
 
-			backupPath, perm, err := backup.Create(cfg.WireGuard.ConfigPath, cfg.WireGuard.BackupDir)
-			if err != nil {
-				return wrapExit(ExitCodeWriteFailure, err)
+			// Back up whatever file is about to be overwritten, which is the
+			// effective output path, not necessarily wireguard.config_path.
+			outputPath := cfg.EffectiveOutputPath()
+			var backupPath string
+			perm := fs.FileMode(0o600)
+			if _, statErr := os.Stat(outputPath); statErr == nil {
+				var backupErr error
+				backupPath, perm, backupErr = backup.Create(outputPath, cfg.WireGuard.BackupDir)
+				if backupErr != nil {
+					return wrapExit(ExitCodeWriteFailure, backupErr)
+				}
 			}
 			if !cfg.WireGuard.PreservePermissions {
 				perm = 0o600
 			}
-			outputPath := cfg.EffectiveOutputPath()
 			if err := backup.WriteAtomic(outputPath, []byte(next), perm); err != nil {
 				return wrapExit(ExitCodeWriteFailure, err)
 			}
@@ -264,7 +277,9 @@ func newUpdateCmd(configPath *string, resolver dns.IPResolver, syncer wgsync.Syn
 			for _, p := range peers {
 				fmt.Fprintf(cmd.OutOrStdout(), "Updated peer %s: %d AllowedIPs entries.\n", p.PublicKey, len(p.Prefixes))
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Backup written to %s\n", backupPath)
+			if backupPath != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "Backup written to %s\n", backupPath)
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Config written to %s\n", outputPath)
 
 			if sync || cfg.WireGuard.Sync {
@@ -501,6 +516,9 @@ func resolveAllowedIPs(ctx context.Context, resolver dns.IPResolver, cfg config.
 		return nil, resolveSummary{}, wrapExit(ExitCodeInvalidConfig, err)
 	}
 	prefixes = aggregatePrefixes(cfg, prefixes)
+	if len(resolved) == 0 && len(static) == 0 {
+		return nil, resolveSummary{}, wrapExit(ExitCodeDNSFailure, errors.New("no AllowedIPs generated"))
+	}
 	if cfg.Output.Mode == "cidr-file" {
 		text, formatErr := allowedips.Format(prefixes, cfg.Output.Format)
 		if formatErr != nil {
@@ -509,9 +527,6 @@ func resolveAllowedIPs(ctx context.Context, resolver dns.IPResolver, cfg config.
 		if writeErr := output.WriteText(cfg.Output.Path, text); writeErr != nil {
 			return nil, resolveSummary{}, wrapExit(ExitCodeWriteFailure, writeErr)
 		}
-	}
-	if len(resolved) == 0 && len(static) == 0 {
-		return nil, resolveSummary{}, wrapExit(ExitCodeDNSFailure, errors.New("no AllowedIPs generated"))
 	}
 	return prefixes, summary, nil
 }

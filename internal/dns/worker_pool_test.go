@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/bovinemagnet/wg-dns-sync/internal/config"
 )
@@ -38,6 +39,37 @@ func TestResolveHostsFiltersIPv4(t *testing.T) {
 	}
 	if len(results) != 1 || len(results[0].IPs) != 1 || !results[0].IPs[0].Is4() {
 		t.Fatalf("unexpected results: %+v", results)
+	}
+}
+
+// countingResolver records how many times LookupIPAddr is called, always
+// returning err.
+type countingResolver struct {
+	calls *int
+	err   error
+}
+
+func (r countingResolver) LookupIPAddr(_ context.Context, _ string) ([]net.IPAddr, error) {
+	*r.calls++
+	return nil, r.err
+}
+
+// TestLookupWithRetryStopsOnCancelledContext guards against retrying after
+// the parent context is already cancelled: each attempt would fail instantly,
+// so without a cancellation check the loop burns through every configured
+// retry instead of returning immediately.
+func TestLookupWithRetryStopsOnCancelledContext(t *testing.T) {
+	calls := 0
+	resolver := countingResolver{calls: &calls, err: errors.New("boom")}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := lookupWithRetry(ctx, resolver, "host.example.com", time.Second, 5)
+	if err == nil {
+		t.Fatal("expected an error for a cancelled context")
+	}
+	if calls != 1 {
+		t.Fatalf("expected exactly 1 attempt after context cancellation, got %d", calls)
 	}
 }
 

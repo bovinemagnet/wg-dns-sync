@@ -44,6 +44,54 @@ func TestUpdatePeerAllowedIPsPreservesCRLF(t *testing.T) {
 	}
 }
 
+// TestUpdatePeerAllowedIPsInsertsBeforeTrailingCommentBlock guards against
+// inserting a missing AllowedIPs line immediately before the next peer's
+// section header, which lands it visually under any blank line and comment
+// that precede that header and belong to the next peer.
+func TestUpdatePeerAllowedIPsInsertsBeforeTrailingCommentBlock(t *testing.T) {
+	input := `[Peer]
+PublicKey = TARGET
+Endpoint = example.com:51820
+
+# Peer B - laptop
+[Peer]
+PublicKey = OTHER
+AllowedIPs = 10.9.9.9/32
+`
+	out, err := UpdatePeerAllowedIPs(input, "TARGET", []string{"10.0.0.0/8"})
+	if err != nil {
+		t.Fatalf("UpdatePeerAllowedIPs() error = %v", err)
+	}
+	want := `[Peer]
+PublicKey = TARGET
+Endpoint = example.com:51820
+AllowedIPs = 10.0.0.0/8
+
+# Peer B - laptop
+[Peer]
+PublicKey = OTHER
+AllowedIPs = 10.9.9.9/32
+`
+	if out != want {
+		t.Fatalf("AllowedIPs inserted in the wrong place:\ngot:\n%q\nwant:\n%q", out, want)
+	}
+}
+
+// TestUpdatePeerAllowedIPsToleratesStrayCRLF guards against detectNewline
+// switching the whole file to CRLF splitting because of a single stray CRLF
+// line ending (e.g. a comment pasted from a Windows editor) in an otherwise
+// LF-terminated file — that misdetection breaks section parsing entirely.
+func TestUpdatePeerAllowedIPsToleratesStrayCRLF(t *testing.T) {
+	input := "[Interface]\nPrivateKey = X\r\n\n[Peer]\nPublicKey = TARGET\nAllowedIPs = 10.0.0.0/8\nEndpoint = example.com:51820\n"
+	out, err := UpdatePeerAllowedIPs(input, "TARGET", []string{"203.0.113.10/32"})
+	if err != nil {
+		t.Fatalf("UpdatePeerAllowedIPs() error = %v", err)
+	}
+	if !strings.Contains(out, "AllowedIPs = 203.0.113.10/32\n") {
+		t.Fatalf("predominantly-LF file with a stray CRLF was not updated correctly, got:\n%q", out)
+	}
+}
+
 func TestPeerAllowedIPs(t *testing.T) {
 	input := `[Peer]
 PublicKey = TARGET
