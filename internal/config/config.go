@@ -187,8 +187,8 @@ func (c AppConfig) Validate() error {
 	targets := c.PeerTargets()
 	seenKeys := map[string]int{}
 	for i, t := range targets {
-		if len(t.DNSNames) == 0 {
-			return fmt.Errorf("%s must not be empty", c.dnsNamesField(i))
+		if len(t.DNSNames) == 0 && len(t.Static) == 0 {
+			return fmt.Errorf("%s must specify at least one of dns_names or static", c.dnsNamesField(i))
 		}
 		for _, cidr := range t.Static {
 			if _, err := netip.ParsePrefix(cidr); err != nil {
@@ -214,16 +214,11 @@ func (c AppConfig) Validate() error {
 	if len(c.DNS.Families) == 0 {
 		return errors.New("dns.families must not be empty")
 	}
-	seenFamily := map[string]struct{}{}
 	for _, family := range c.DNS.Families {
 		n := strings.ToLower(strings.TrimSpace(family))
 		if n != "ipv4" && n != "ipv6" {
 			return fmt.Errorf("invalid dns family %q", family)
 		}
-		seenFamily[n] = struct{}{}
-	}
-	if len(seenFamily) == 0 {
-		return errors.New("dns.families must include ipv4 and/or ipv6")
 	}
 
 	if c.Aggregate.Enabled {
@@ -309,17 +304,6 @@ type ConfigTemplateData struct {
 	PeerPublicKey string
 	Static        []string
 	DNSNames      []string
-}
-
-// InitConfigFile writes a starter config using example static CIDRs and DNS
-// names. wgConfigPath and peerPublicKey fall back to placeholders when empty.
-func InitConfigFile(configPath, wgConfigPath, peerPublicKey string) (string, error) {
-	return InitConfigFileWith(configPath, ConfigTemplateData{
-		WireGuardPath: wgConfigPath,
-		PeerPublicKey: peerPublicKey,
-		Static:        []string{"10.0.0.0/8"},
-		DNSNames:      []string{"service-a.example.com", "service-b.example.com"},
-	})
 }
 
 // InitConfigFileWith writes a starter config from the supplied data. It creates

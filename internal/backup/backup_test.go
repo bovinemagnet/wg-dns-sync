@@ -97,6 +97,26 @@ func TestWriteAtomicWritesContentAndPerm(t *testing.T) {
 	}
 }
 
+func TestCreateMissingSourceReturnsError(t *testing.T) {
+	if _, _, err := Create(filepath.Join(t.TempDir(), "missing.conf"), ""); err == nil {
+		t.Fatal("expected error for a missing source file")
+	}
+}
+
+func TestWriteAtomicFailsWhenParentIsAFile(t *testing.T) {
+	dir := t.TempDir()
+	// A regular file where WriteAtomic expects a directory component makes
+	// os.MkdirAll fail.
+	blocker := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(blocker, "sub", "out.conf")
+	if err := WriteAtomic(dst, []byte("data"), 0o600); err == nil {
+		t.Fatal("expected error when a path component is a file, not a directory")
+	}
+}
+
 func names(entries []os.DirEntry) []string {
 	out := make([]string, len(entries))
 	for i, e := range entries {

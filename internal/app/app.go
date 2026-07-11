@@ -225,6 +225,9 @@ func newUpdateCmd(configPath *string, resolver dns.IPResolver, syncer wgsync.Syn
 			if err != nil {
 				return wrapExit(ExitCodeInvalidConfig, err)
 			}
+			if cfg.Output.Mode != "update-config" {
+				return wrapExit(ExitCodeInvalidConfig, fmt.Errorf("update requires output.mode: update-config (got %q); use resolve or render instead", cfg.Output.Mode))
+			}
 			if strings.TrimSpace(backupDir) != "" {
 				cfg.WireGuard.BackupDir = backupDir
 			}
@@ -257,9 +260,24 @@ func newUpdateCmd(configPath *string, resolver dns.IPResolver, syncer wgsync.Syn
 			// Back up whatever file is about to be overwritten, which is the
 			// effective output path, not necessarily wireguard.config_path.
 			outputPath := cfg.EffectiveOutputPath()
+			existing, readErr := os.ReadFile(outputPath)
+			existingExists := readErr == nil
+			if existingExists && string(existing) == next {
+				fmt.Fprintf(cmd.OutOrStdout(), "Resolved %d DNS names.\n", summary.HostCount)
+				fmt.Fprintln(cmd.OutOrStdout(), "No changes: AllowedIPs already up to date; nothing written.")
+				if path := strings.TrimSpace(cfg.Output.MetricsPath); path != "" {
+					if err := metrics.Write(path, runMetrics(summary, peers)); err != nil {
+						return wrapExit(ExitCodeWriteFailure, err)
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), "Metrics written to %s\n", path)
+				}
+				summary.printWarnings(cmd.ErrOrStderr())
+				return nil
+			}
+
 			var backupPath string
 			perm := fs.FileMode(0o600)
-			if _, statErr := os.Stat(outputPath); statErr == nil {
+			if existingExists {
 				var backupErr error
 				backupPath, perm, backupErr = backup.Create(outputPath, cfg.WireGuard.BackupDir)
 				if backupErr != nil {

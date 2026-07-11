@@ -255,6 +255,39 @@ output:
 	}
 }
 
+// TestRenderStaticOnlyPeerProducesAllowedIPs confirms a peer configured with
+// only static CIDRs (no dns_names) is updated correctly end to end.
+func TestRenderStaticOnlyPeerProducesAllowedIPs(t *testing.T) {
+	dir := t.TempDir()
+	wgPath := filepath.Join(dir, "wg0.conf")
+	original := "[Peer]\nPublicKey = TARGET\n"
+	if err := os.WriteFile(wgPath, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(dir, "config.yaml")
+	body := fmt.Sprintf(`wireguard:
+  config_path: %q
+  target_peer_public_key: "TARGET"
+allowed_ips:
+  static:
+    - "10.0.0.0/8"
+output:
+  mode: "update-config"
+  format: "wireguard"
+`, wgPath)
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _, err := run(nil, "render", "--config", cfgPath)
+	if err != nil {
+		t.Fatalf("render error: %v", err)
+	}
+	if !strings.Contains(out, "AllowedIPs = 10.0.0.0/8") {
+		t.Fatalf("static-only peer missing rendered AllowedIPs: %q", out)
+	}
+}
+
 func TestRenderMatchesGolden(t *testing.T) {
 	resolver := fakeResolver{data: map[string][]net.IPAddr{
 		"service-a.example.com": ipv4("203.0.113.10"),
@@ -272,6 +305,18 @@ func TestRenderMatchesGolden(t *testing.T) {
 	}
 	if out != string(want) {
 		t.Fatalf("render output mismatch:\n got: %q\nwant: %q", out, want)
+	}
+}
+
+// TestUpdateRequiresUpdateConfigMode guards against update silently
+// attempting to rewrite wireguard.config_path when output.mode isn't
+// update-config, which previously failed with a confusing bare "open :
+// no such file or directory" error.
+func TestUpdateRequiresUpdateConfigMode(t *testing.T) {
+	cfg := writeConfig(t, configOpts{mode: "stdout"})
+	_, _, err := run(nil, "update", "--config", cfg)
+	if got := exitCode(t, err); got != ExitCodeInvalidConfig {
+		t.Fatalf("exit code = %d, want %d", got, ExitCodeInvalidConfig)
 	}
 }
 
@@ -381,6 +426,52 @@ output:
 	}
 	if content, _ := os.ReadFile(backups[0]); string(content) != string(existingOutput) {
 		t.Fatalf("backup does not contain the previous output-path content, got %q", content)
+	}
+}
+
+// TestUpdateSkipsWriteWhenUnchanged guards against every scheduled run
+// creating a new backup and rewriting the config even when the resolved
+// AllowedIPs haven't changed, which would churn backups without bound under
+// a cron/systemd timer.
+func TestUpdateSkipsWriteWhenUnchanged(t *testing.T) {
+	resolver := fakeResolver{data: map[string][]net.IPAddr{
+		"service-a.example.com": ipv4("203.0.113.10"),
+		"service-b.example.com": ipv4("203.0.113.11"),
+	}}
+	original, err := os.ReadFile("testdata/wg0.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	wgPath := filepath.Join(dir, "wg0.conf")
+	if err := os.WriteFile(wgPath, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := writeConfig(t, configOpts{mode: "update-config", format: "wireguard", wgPath: wgPath})
+
+	if _, _, err := run(resolver, "update", "--config", cfg); err != nil {
+		t.Fatalf("first update error: %v", err)
+	}
+	if backups := glob(t, dir, "wg0.conf.bak.*"); len(backups) != 1 {
+		t.Fatalf("expected 1 backup after first run, got %d", len(backups))
+	}
+	updatedContent, err := os.ReadFile(wgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, _, err := run(resolver, "update", "--config", cfg)
+	if err != nil {
+		t.Fatalf("second update error: %v", err)
+	}
+	if !strings.Contains(out, "No changes") {
+		t.Fatalf("expected a no-changes notice, got: %q", out)
+	}
+	if backups := glob(t, dir, "wg0.conf.bak.*"); len(backups) != 1 {
+		t.Fatalf("expected still 1 backup after an unchanged run, got %d: %v", len(backups), backups)
+	}
+	if got, _ := os.ReadFile(wgPath); string(got) != string(updatedContent) {
+		t.Fatal("unchanged run modified the config file")
 	}
 }
 
